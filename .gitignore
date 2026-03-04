@@ -1,0 +1,89 @@
+# ============================================================
+# PokémonTool — .gitignore
+# Covers Node.js, Python, Go, Bash, React/Vite, Docker, OS
+# ============================================================
+
+# --- Node.js / npm ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+package-lock.json
+yarn.lock
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+env/
+.venv/
+.env
+pip-wheel-metadata/
+*.pyo
+*.pyd
+
+# --- Go ---
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# --- React / Vite build output ---
+client/dist/
+client/.vite/
+client/build/
+
+# --- Environment & secrets (NEVER commit these) ---
+.env
+.env.local
+.env.*.local
+.env.production
+secrets/
+*.pem
+*.key
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Logs ---
+logs/
+*.log
+*.log.*
+
+# --- Databases ---
+*.sqlite
+*.db
+pgdata/
+mongodata/
+redisdata/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.Spotlight-V100
+.Trashes
+
+# --- IDEs ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# --- Playwright ---
+playwright-report/
+test-results/
