@@ -73,7 +73,7 @@ services:
       retries: 5
 
   # ----------------------------------------------------------
-  # Node.js API Gateway — REST API + SSE streaming
+  # Go API Gateway — replaces Node.js (lower memory, single binary)
   # ----------------------------------------------------------
   server:
     build:
@@ -91,9 +91,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    volumes:
-      - ./server:/app          # Live code reload in dev
-      - /app/node_modules       # Preserve container node_modules
 
   # ----------------------------------------------------------
   # Python API Consumer — eBay + TCGplayer data ingestion

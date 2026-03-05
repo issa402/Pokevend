@@ -1,19 +1,32 @@
 # ============================================================
-# PokémonTool — Node.js API Gateway Dockerfile
-# Multi-stage build: install deps in stage 1, run in stage 2
+# PokémonTool — Go API Gateway Dockerfile
+# Multi-stage: compile in builder, run tiny Alpine binary
+# Result: ~15MB image vs ~200MB for Node.js
 # ============================================================
 
-FROM node:20-alpine AS deps
+FROM golang:1.22-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --only=production
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-# Create non-root user for security
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-COPY --from=deps /app/node_modules ./node_modules
+# Download dependencies first (cached layer)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build the binary
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./main.go
+
+# ---- Minimal runtime image ----
+FROM alpine:3.19
+WORKDIR /app
+
+# Add CA certs for HTTPS outbound calls
+RUN apk --no-cache add ca-certificates tzdata
+
+COPY --from=builder /app/server .
+
+# Non-root user
+RUN adduser -D -s /bin/sh appuser
 USER appuser
+
 EXPOSE 3001
-CMD ["node", "index.js"]
+CMD ["./server"]
