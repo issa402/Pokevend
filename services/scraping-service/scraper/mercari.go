@@ -1,8 +1,50 @@
 // ============================================================
-// PokémonTool — Mercari Scraper (Go + Playwright)
-// ============================================================
-// Mercari is popular for selling individual Pokémon cards at
-// competitive prices. No API is available — we use Playwright.
+// FILE: services/scraping-service/scraper/mercari.go
+// TYPE: Scraper — Mercari Browser Automation
+//
+// WHAT IS MERCARI?
+// Mercari is a marketplace app popular for individual card sales.
+// More willing sellers set prices below TCGplayer "market price."
+// Our scraper finds these underpriced listings for deal detection.
+//
+// WHY MERCARI NEEDS A REAL BROWSER:
+// Mercari is a React Single-Page Application (SPA).
+// Like Facebook, content loads dynamically via JavaScript.
+// Traditional HTTP scraping tools like requests/httpx get an empty page.
+// Playwright's real Chrome browser executes the JavaScript, rendering the full DOM.
+//
+// DIFFERENCE FROM FACEBOOK SCRAPER:
+// Facebook: uses SlowMo + specific bot evasion (Facebook is aggressive)
+// Mercari: always headless, standard UserAgent, WaitUntilStateNetworkidle
+//          (Mercari is less aggressive about blocking headless browsers)
+// WaitUntilStateNetworkidle = waits until no network requests for 500ms
+//   (guarantees React has finished rendering the listing grid)
+// DomContentLoaded = faster but might catch page before React renders
+//
+// GO CONCEPT: Reusing buildListing() from facebook.go
+// Both scrapers are in the "scraper" package.
+// buildListing in facebook.go is available to mercari.go — same package = same scope.
+// This is an example of PACKAGE-LEVEL code sharing in Go (less granular than OOP).
+// If they were in different packages, we'd need to export it (BuildListing — capital B).
+//
+// SELECTORS AND FRAGILITY:
+// Web scrapers break when websites redesign.
+// "[data-testid]" selectors are more stable than class names (devs add testids intentionally).
+// Multiple selectors separated by commas: tries first, falls back to second.
+// Still fragile — expect to update these selectors over time.
+//
+// TODO #1 (Practice): Add login support for better access
+// Mercari shows more listings to logged-in users. Add:
+//   page.Fill("input[name='email']", email)
+//   page.Fill("input[name='password']", password)
+//   page.Click("button[type='submit']")
+// Use Playwright's persistent browser context to save cookies between runs
+// so you don't have to log in every time: browser.NewContext with StorageState
+//
+// TODO #2 (Practice): Add image URL extraction
+// The current scraper captures imageUrl from <img> tags.
+// After publishing to RabbitMQ, the notification_worker doesn't use image_url.
+// Add image_url to the models.Alert struct and display the card image in SSE alerts.
 // ============================================================
 
 package scraper

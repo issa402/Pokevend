@@ -1,9 +1,36 @@
-// services/card_service.go — Business logic: search, trending, price history
+// ============================================================
+// FILE: server/services/card_service.go
+// TYPE: Service Layer — Card Business Logic
+//
+// WHAT IS THIS?
+// Business logic for card operations: search, trending, price history.
+// Adds Redis caching on top of PostgreSQL queries.
+//
+// CACHING STRATEGY IMPLEMENTED HERE:
+//   Search results:   5-minute TTL  (users re-search, slight staleness OK)
+//   Trending cards:  30-minute TTL  (batch-computed, expensive to fetch)
+//
+// CACHE KEY FORMAT: "resource:qualifier"
+//   "search:charizard"   → search for "charizard"
+//   "trending:rising"    → top 10 rising cards
+//   "trending:falling"   → top 10 falling cards
+//
+// WHY CACHE IN THE SERVICE, NOT THE STORE OR HANDLER?
+// Service: RIGHT LEVEL. Business rule: "trending cards can be 30 min stale."
+// Store: too low. Store's job is SQL, not caching.
+// Handler: too high. Handler's job is HTTP, not caching.
+// The caching strategy is a BUSINESS DECISION → belongs in service.
+//
+// GO CONCEPTS:
+//   redis.Client.Get/Set, json.Marshal/Unmarshal, time.Duration,
+//   errors.Is(err, redis.Nil) to detect cache miss
+// ============================================================
 package services
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,68 +39,102 @@ import (
 	"pokemontool/store"
 )
 
+// CardService handles card business logic with Redis caching.
 type CardService struct {
-	cards store.CardStore
-	cache *redis.Client
+	store store.CardStore   // PostgreSQL queries
+	cache *redis.Client     // Redis for caching
 }
 
-func NewCardService(cards store.CardStore, cache *redis.Client) *CardService {
-	return &CardService{cards: cards, cache: cache}
+// NewCardService is the constructor — injects store (DB) and cache (Redis).
+func NewCardService(store store.CardStore, cache *redis.Client) *CardService {
+	return &CardService{store: store, cache: cache}
 }
 
-func (s *CardService) Search(ctx context.Context, query string, limit int) ([]models.Card, string, error) {
-	key := "search:" + query
-	if cached := s.fromCache(ctx, key); cached != nil {
+// Search finds cards by name with a 5-minute cache.
+// First checks Redis; on miss, queries PostgreSQL and caches the result.
+func (s *CardService) Search(ctx context.Context, query string, limit int) ([]models.Card, error) {
+	// ── Try cache first ────────────────────────────────────────
+	cacheKey := "search:" + query
+	// cache.Get returns the cached JSON bytes if key exists
+	if cached, err := s.cache.Get(ctx, cacheKey).Bytes(); err == nil {
+		// Cache HIT — deserialize JSON back into []models.Card and return immediately
 		var cards []models.Card
-		json.Unmarshal(cached, &cards)
-		return cards, "cache", nil
+		if json.Unmarshal(cached, &cards) == nil { // if JSON is valid
+			return cards, nil // return fast (~0.1ms vs ~5ms for DB)
+		}
 	}
-	cards, err := s.cards.Search(ctx, query, limit)
+	// errors.Is(err, redis.Nil) would be true if key not found (cache miss)
+	// We don't need to check because any error → fall through to DB query
+
+	// ── Cache MISS — query PostgreSQL ─────────────────────────
+	cards, err := s.store.Search(ctx, query, limit)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	s.toCache(ctx, key, cards, 5*time.Minute)
-	return cards, "database", nil
+
+	// ── Cache the result ───────────────────────────────────────
+	// json.Marshal converts []models.Card → JSON bytes
+	if bytes, err := json.Marshal(cards); err == nil {
+		// cache.Set(ctx, key, value, TTL) — expires after 5 minutes
+		// After TTL expires, next request is a cache miss → fresh DB query
+		s.cache.Set(ctx, cacheKey, bytes, 5*time.Minute)
+	}
+	return cards, nil
 }
 
-func (s *CardService) GetTrending(ctx context.Context) ([]models.Card, []models.Card, string, error) {
-	key := "trending:all"
-	type trendResult struct {
-		Rising  []models.Card `json:"rising"`
-		Falling []models.Card `json:"falling"`
+// GetTrending returns top rising and falling cards with 30-minute cache.
+// These are expensive to compute (Python runs linear regression) so we cache aggressively.
+func (s *CardService) GetTrending(ctx context.Context) (rising, falling []models.Card, err error) {
+	// Try rising cache
+	if cached, err := s.cache.Get(ctx, "trending:rising").Bytes(); err == nil {
+		json.Unmarshal(cached, &rising)
 	}
-	if cached := s.fromCache(ctx, key); cached != nil {
-		var r trendResult
-		json.Unmarshal(cached, &r)
-		return r.Rising, r.Falling, "cache", nil
+	// Try falling cache
+	if cached, err := s.cache.Get(ctx, "trending:falling").Bytes(); err == nil {
+		json.Unmarshal(cached, &falling)
 	}
-	rising, falling, err := s.cards.GetTrending(ctx)
-	if err != nil {
-		return nil, nil, "", err
+	// If BOTH caches hit, return immediately
+	if len(rising) > 0 && len(falling) > 0 {
+		return rising, falling, nil
 	}
-	s.toCache(ctx, key, trendResult{rising, falling}, 30*time.Minute)
-	return rising, falling, "database", nil
-}
 
-func (s *CardService) GetPriceHistory(ctx context.Context, cardID string) (*models.Card, []models.PricePoint, error) {
-	card, err := s.cards.GetByID(ctx, cardID)
+	// Cache miss — fetch from PostgreSQL
+	rising, falling, err = s.store.GetTrending(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	history, err := s.cards.GetPriceHistory(ctx, cardID)
-	return card, history, err
+
+	// Cache both results for 30 minutes
+	if bytes, e := json.Marshal(rising); e == nil {
+		s.cache.Set(ctx, "trending:rising", bytes, 30*time.Minute)
+	}
+	if bytes, e := json.Marshal(falling); e == nil {
+		s.cache.Set(ctx, "trending:falling", bytes, 30*time.Minute)
+	}
+	return rising, falling, nil
 }
 
-func (s *CardService) fromCache(ctx context.Context, key string) []byte {
-	v, err := s.cache.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil
-	}
-	return v
+// GetPriceHistory returns price history — no cache (chart data needs to be fresh).
+func (s *CardService) GetPriceHistory(ctx context.Context, cardID string) ([]models.PricePoint, error) {
+	return s.store.GetPriceHistory(ctx, cardID)
 }
 
-func (s *CardService) toCache(ctx context.Context, key string, v interface{}, ttl time.Duration) {
-	if b, err := json.Marshal(v); err == nil {
-		s.cache.Set(ctx, key, b, ttl)
-	}
+// InvalidateTrendingCache clears the trending cache.
+// Call this after Python updates cards (e.g., via a webhook from Python → Go admin endpoint).
+func (s *CardService) InvalidateTrendingCache(ctx context.Context) {
+	s.cache.Del(ctx, "trending:rising", "trending:falling")
 }
+
+// TODO #1 (Practice): Add cache invalidation for search
+// When a card's price is updated by the analytics engine, cached search
+// results for that card become stale. Add:
+//   func (s *CardService) InvalidateSearch(ctx context.Context, cardName string)
+//     s.cache.Del(ctx, "search:"+strings.ToLower(cardName))
+// Call it from a new admin endpoint: POST /api/admin/invalidate-cache
+
+// TODO #2 (Practice): Add GetCardDetail with caching
+// The card detail page fetches a single card by ID + its price history.
+// Add: func (s *CardService) GetDetail(ctx, cardID string) (*models.Card, []models.PricePoint, error)
+// Cache the card detail: "card:"+cardID with 10-minute TTL
+// Why 10 minutes (shorter than trending)? User just searched for this card —
+// they expect relatively fresh price data on the detail page.

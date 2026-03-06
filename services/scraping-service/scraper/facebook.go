@@ -1,9 +1,46 @@
 // ============================================================
-// PokémonTool — Facebook Marketplace Scraper (Go + Playwright)
-// ============================================================
-// Facebook has no public API for Marketplace, so we use
-// Playwright to control a real browser and extract listings.
-// 
+// FILE: services/scraping-service/scraper/facebook.go
+// TYPE: Scraper — Facebook Marketplace Browser Automation
+//
+// WHAT IS WEB SCRAPING?
+// Web scraping = programmatically extracting data from websites
+// that don't provide APIs. We simulate a real browser doing what
+// a human would: navigate, scroll, read text.
+//
+// WHY NOT JUST USE HTTP GET?
+// Simple HTTP GET returns the HTML shell — JavaScript hasn't run yet.
+// Facebook Marketplace renders entirely in JavaScript (React).
+// The HTML on first load is basically: <div id="root"></div>
+// After JavaScript runs: 1000 lines of listing HTML appears.
+// Playwright launches real Chrome → JavaScript runs → we scrape the result.
+//
+// PLAYWRIGHT CONCEPTS:
+//   Playwright: cross-browser automation library (made by Microsoft)
+//   Headless: runs browser without a GUI (no window on screen)
+//   Browser: the Chromium instance (like opening Chrome)
+//   Context: an isolated browser state (fresh cookies, localStorage)
+//   Page: one tab in the browser
+//   page.Goto(): navigate to a URL
+//   page.WaitForSelector(): wait for an element to appear in the DOM
+//   page.Evaluate(): run JavaScript code inside the live page
+//
+// BOT DETECTION EVASION:
+// Facebook actively detects and blocks automated browsers.
+// Our countermeasures:
+//   - Realistic User-Agent string (looks like Chrome on Windows)
+//   - Standard viewport size (1280×800 = normal desktop)
+//   - SlowMo: 50ms = adds delays between actions (humans aren't instant)
+//   - --disable-blink-features=AutomationControlled: hides Chromedriver signals
+//
+// FAANG CONTEXT: When is scraping legal?
+// Always check robots.txt and Terms of Service before scraping.
+// Facebook's ToS restricts automated scraping — use this for learning.
+// Production: use approved APIs (eBay Browse API, TCGplayer API) instead.
+//
+// GO PATTERN: page.Evaluate() returns interface{}
+// JavaScript returns JSON objects → Go receives them as map[string]interface{}
+// We type-assert carefully: rawItem.(map[string]interface{})
+//
 // Strategy:
 //   1. Launch headless Chromium
 //   2. Navigate to facebook.com/marketplace
