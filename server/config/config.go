@@ -59,6 +59,7 @@ type Config struct {
 // Load reads all environment variables and returns a Config.
 // Called once in main.go: cfg := config.Load()
 // Environment variables come from: .env file (dev) or EC2 environment (prod)
+
 func Load() *Config {
 	return &Config{
 		// getEnv(key, default) — if KEY is not set, use the default
@@ -95,6 +96,7 @@ func Load() *Config {
 //   Exported (public) = UpperCamelCase: Config, Load
 //   Unexported (private) = lowerCamelCase: getEnv
 //   Private functions can only be called within the same package.
+
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val

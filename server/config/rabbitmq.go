@@ -32,6 +32,7 @@
 // amqp.Dial returns a *amqp.Connection which is long-lived.
 // Create channels from it as needed (see worker/notification_worker.go).
 // ============================================================
+
 package config
 
 import (
@@ -49,6 +50,7 @@ import (
 //   Connection = the TCP connection to RabbitMQ (expensive to create)
 //   Channel    = lightweight logical sub-connection (create many per connection)
 //   Pattern: one Connection per service, one Channel per goroutine
+
 func ConnectRabbitMQ(cfg *Config) (*amqp.Connection, error) {
 	// amqp.Dial establishes the TCP connection to RabbitMQ.
 	// URL format: amqp://user:password@host:port/vhost
