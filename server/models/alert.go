@@ -29,6 +29,7 @@ package models
 import "time"
 
 // Alert represents a single notification event for a user.
+
 type Alert struct {
 	ID          string     `json:"id"`
 	UserID      string     `json:"userId"`

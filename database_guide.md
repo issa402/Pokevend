@@ -122,6 +122,7 @@ FLOAT has rounding errors (`0.1 + 0.2 = 0.30000000000000004`). DECIMAL is exact.
 id SERIAL PRIMARY KEY   -- 1, 2, 3, 4...
 
 -- UUID — globally unique, no sequential guessing, FAANG standard
+
 id UUID PRIMARY KEY DEFAULT gen_random_uuid()
 -- 'a3f8c2d1-7b4e-4a1f-9c3d-1234567890ab'
 ```

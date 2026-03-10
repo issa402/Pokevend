@@ -36,6 +36,7 @@ import (
 type AlertHandler struct{ svc *services.AlertService }
 
 // NewAlertHandler injects the AlertService.
+
 func NewAlertHandler(svc *services.AlertService) *AlertHandler {
 	return &AlertHandler{svc: svc}
 }
@@ -102,15 +103,47 @@ func (h *AlertHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// TODO #1 (Practice): Return unread count in List response
-// Currently List returns just the alerts array.
-// Change to return: {"alerts": [...], "unreadCount": 5}
-// Use svc.GetUnreadCount(ctx, user.ID) in parallel with svc.List()
-// Research: "Go errgroup" for running both queries concurrently and collecting results
+// ============================================================
+// PRACTICE TASK #5 — Add UnreadCount Handler
+// See: practice_tasks.md → Task 5
+// ============================================================
+//
+// After completing Tasks 3 and 4, add this method to AlertHandler.
+//
+// Signature:
+//   func (h *AlertHandler) UnreadCount(w http.ResponseWriter, r *http.Request)
+//
+// What it should do:
+//   1. user := middleware.GetUser(r)             → get authenticated user
+//   2. count, err := h.svc.GetUnreadCount(...)   → call service
+//   3. If err → pkg.Error(w, 500, "failed to get unread count")
+//   4. pkg.JSON(w, 200, map[string]int{"unread": count})
+//
+// Expected JSON response: {"unread": 5}
+// This powers the navbar badge on the frontend (shows red dot with number).
+//
+// Write your implementation here (delete this comment block):
 
-// TODO #2 (Practice): Add alert filtering by type
+// ── SOLUTION (peek only when stuck) ──────────────────────────
+// func (h *AlertHandler) UnreadCount(w http.ResponseWriter, r *http.Request) {
+// 	user := middleware.GetUser(r)
+// 	count, err := h.svc.GetUnreadCount(r.Context(), user.ID)
+// 	if err != nil {
+// 		pkg.Error(w, http.StatusInternalServerError, "failed to get unread count")
+// 		return
+// 	}
+// 	pkg.JSON(w, http.StatusOK, map[string]int{"unread": count})
+// }
+//
+// Then go to routes/routes.go and add (Task 6):
+//   r.Get("/alerts/unread-count", alerts.UnreadCount)
+// ⚠️  Add BEFORE r.Get("/alerts/{id}/read", ...) — chi matches top-to-bottom!
+//     "unread-count" must come before {id} or chi will treat it as an ID.
+
+// ============================================================
+// PRACTICE (bonus): Add alert filtering by type
 // Let the frontend filter: GET /api/alerts?type=PRICE_DROP
-// In alert_handler.go: read r.URL.Query().Get("type")
-// Pass it down to service: svc.ListByType(ctx, user.ID, alertType, limit)
-// In store: add alertType parameter to the SQL WHERE clause
-// When alertType is empty string (""), return all alerts (no filter)
+// In this handler: alertType := r.URL.Query().Get("type")
+// Pass it to service → store adds it to the SQL WHERE clause
+// When empty: return all alerts. When set: filter by alert_type.
+// ============================================================

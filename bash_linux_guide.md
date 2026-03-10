@@ -49,6 +49,7 @@ IS_PROD=true
 # Use variables with $
 echo "Starting $NAME on port $PORT"
 
+
 # Command substitution — store command output in a variable
 NODE_VER=$(node -v)          # $(command) = run command, capture output
 DATE=$(date '+%Y-%m-%d')     # current date

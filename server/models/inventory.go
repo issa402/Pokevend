@@ -3,6 +3,7 @@ package models
 
 import "time"
 
+
 type InventoryItem struct {
 	ID            string     `json:"id"`
 	UserID        string     `json:"userId"`

@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 
 -- shows has no FK — independent event data
+
 CREATE TABLE IF NOT EXISTS shows (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name           TEXT NOT NULL,

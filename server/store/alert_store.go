@@ -50,6 +50,7 @@ type AlertStore interface {
 }
 
 // postgresAlertStore implements AlertStore with PostgreSQL.
+
 type postgresAlertStore struct{ db *pgxpool.Pool }
 
 // NewAlertStore is the constructor — returns the interface type (AlertStore).
@@ -83,6 +84,7 @@ func (s *postgresAlertStore) ListByUser(ctx context.Context, userID string, limi
 
 // MarkRead marks ONE alert as read. The AND user_id=$2 is the security check.
 // Returns pgx.ErrNoRows if alert doesn't exist or belongs to another user.
+
 func (s *postgresAlertStore) MarkRead(ctx context.Context, id, userID string) error {
 	result, err := s.db.Exec(ctx,
 		`UPDATE alerts SET is_read=true WHERE id=$1 AND user_id=$2`, id, userID)
@@ -130,16 +132,59 @@ func (s *postgresAlertStore) GetWatchedAlerts(ctx context.Context, userID string
 	return s.ListByUser(ctx, userID, 50)
 }
 
-// TODO #1 (Practice): Add GetUnreadCount(ctx, userID) (int, error)
-// The navbar badge needs just the COUNT of unread alerts, not the full list.
-// SQL: SELECT COUNT(*) FROM alerts WHERE user_id=$1 AND is_read=false
-// This is faster than fetching all alerts + counting in Go code.
-// New handler: GET /api/alerts/unread-count → called on page load for badge number
+// ============================================================
+// PRACTICE TASK #3 — Add GetUnreadCount to AlertStore
+// See: practice_tasks.md → Task 3
+// ============================================================
+//
+// STEP 1: Add this line to the AlertStore interface above (between GetWatchedAlerts and the closing })
+//
+//   GetUnreadCount(ctx context.Context, userID string) (int, error)
+//
+// STEP 2: Implement the method below on postgresAlertStore.
+// Signature:
+//
+//   func (s *postgresAlertStore) GetUnreadCount(ctx context.Context, userID string) (int, error)
+//
+// What it should do:
+//   - Run: SELECT COUNT(*) FROM alerts WHERE user_id=$1 AND is_read=false
+//   - Scan the count into a local int variable
+//   - Return (count, err)
+//
+// Hint: use s.db.QueryRow(ctx, sql, userID).Scan(&count)
+//
+// Write your implementation here (delete this comment block and replace it):
 
-// TODO #2 (Practice): Add alert auto-cleanup after 30 days
-// Alerts older than 30 days are noise. Add:
-//   DeleteOlderThan(ctx context.Context, userID string, age time.Duration) error
-// SQL: DELETE FROM alerts WHERE user_id=$1 AND created_at < NOW() - INTERVAL '30 days'
-// Call it from a background goroutine in main.go (on a daily schedule):
-//   go func() { for range time.NewTicker(24*time.Hour).C { alertStore.DeleteOlderThan(...) } }()
-// This keeps the alerts table small and queries fast.
+// ── SOLUTION (peek only when stuck) ──────────────────────────
+// Add to AlertStore interface:
+//   GetUnreadCount(ctx context.Context, userID string) (int, error)
+//
+// func (s *postgresAlertStore) GetUnreadCount(ctx context.Context, userID string) (int, error) {
+// 	var count int
+// 	err := s.db.QueryRow(ctx,
+// 		`SELECT COUNT(*) FROM alerts WHERE user_id=$1 AND is_read=false`,
+// 		userID,
+// 	).Scan(&count)
+// 	return count, err
+// }
+
+// ============================================================
+// PRACTICE TASK #2 (also here): Add alert auto-cleanup after 30 days
+// ============================================================
+//
+// STEP 1: Add to AlertStore interface:
+//   DeleteOlderThan(ctx context.Context, userID string) error
+//
+// STEP 2: Implement with SQL:
+//   DELETE FROM alerts WHERE user_id=$1 AND created_at < NOW() - INTERVAL '30 days'
+//
+// STEP 3: Call from a goroutine in main.go:
+//   go func() { for range time.NewTicker(24*time.Hour).C { alertStore.DeleteOlderThan(ctx, "") } }()
+//
+// ── SOLUTION ──────────────────────────────────────────────────
+// func (s *postgresAlertStore) DeleteOlderThan(ctx context.Context, userID string) error {
+// 	_, err := s.db.Exec(ctx,
+// 		`DELETE FROM alerts WHERE user_id=$1 AND created_at < NOW() - INTERVAL '30 days'`,
+// 		userID)
+// 	return err
+// }

@@ -127,19 +127,52 @@ class RabbitMQPublisher:
             logger.info("RabbitMQ publisher closed")
 
 # ============================================================
-# TODO #1 (Practice): Add a batch publish method
-# Publishing one message at a time is fine for low volume.
-# For high-volume scenarios (scraping 1000 listings at once),
-# publishing one by one causes 1000 network round-trips.
-# Add: async def publish_batch(self, queue_name, messages: List[Dict]) -> None
-# Use a RabbitMQ transaction or publisher confirms to batch-send efficiently.
-# Research: aio_pika Transaction, AMQP publisher_confirms
-
-# TODO #2 (Practice): Add dead-letter queue handling
-# When Go's consumer rejects a message (Nack without requeue),
-# RabbitMQ can route it to a "dead-letter queue" for inspection.
-# Modify declare_queue() to add arguments:
-#   {"x-dead-letter-exchange": "", "x-dead-letter-routing-key": "listings.dead"}
-# Then declare a "listings.dead" queue for monitoring.
-# At FAANG, teams monitor dead-letter queues for data quality issues.
+# PRACTICE TASK #7 — Add publish_batch to RabbitMQPublisher
+# See: practice_tasks.md → Task 7
 # ============================================================
+#
+# Signature:
+#   async def publish_batch(self, queue_name: str, messages: List[Dict[str, Any]]) -> int:
+#
+# Add this import at the top of the file (after "from typing import Any, Dict, Optional"):
+#   from typing import List
+#
+# What it should do:
+#   - Loop through each message in messages
+#   - Call self.publish(queue_name, message) for each
+#   - Catch exceptions INSIDE the loop (one failure shouldn't stop the rest)
+#   - Count how many published successfully
+#   - Return the success count (int)
+#   - Log: f"Batch published {count}/{len(messages)} to '{queue_name}'"
+#
+# Why return int? The service (Task 8) can log how many actually went through.
+#
+# Write your implementation here (delete this comment block):
+
+# ── SOLUTION (peek only when stuck) ──────────────────────────────────────
+# async def publish_batch(self, queue_name: str, messages: List[Dict[str, Any]]) -> int:
+#     """Publish multiple messages. Returns count of successfully published."""
+#     if not self._channel:
+#         logger.warning("Publisher not connected — skipping batch")
+#         return 0
+#     count = 0
+#     for msg in messages:
+#         try:
+#             await self.publish(queue_name, msg)
+#             count += 1
+#         except Exception as e:
+#             logger.error(f"Failed to publish message in batch: {e}")
+#             # Don't break — publish remaining messages even if one fails
+#     logger.info(f"Batch published {count}/{len(messages)} to '{queue_name}'")
+#     return count
+
+# ============================================================
+# BONUS TODO: Add dead-letter queue support
+# When Go's consumer rejects a message (Nack without requeue),
+# route it to a "dead-letter queue" for inspection and debugging.
+# Add to declare_queue() arguments:
+#   {"x-dead-letter-exchange": "", "x-dead-letter-routing-key": "listings.dead"}
+# Then declare_queue("listings.dead") as a monitoring queue.
+# At FAANG, teams alert on dead-letter queue depth > 0.
+# ============================================================
+

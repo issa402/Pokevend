@@ -24,6 +24,7 @@ import "time"
 
 // User represents a vendor account in the system.
 // Populated from the users table by store/user_store.go.
+
 type User struct {
 	ID          string     `json:"id"`          // UUID primary key
 	Email       string     `json:"email"`

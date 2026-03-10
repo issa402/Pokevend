@@ -101,6 +101,7 @@ func (s *postgresCardStore) GetTrending(ctx context.Context) ([]models.Card, []m
 
 // queryByLabel is a private helper — reduces duplication between rising/falling queries.
 // Shared logic extracted into a private function = DRY principle (Don't Repeat Yourself).
+
 func (s *postgresCardStore) queryByLabel(ctx context.Context, label, order string) ([]models.Card, error) {
 	rows, err := s.db.Query(ctx,
 		// fmt.Sprintf in the ORDER BY is safe here because we control the input
