@@ -50,6 +50,7 @@ echo "Checking prerequisites..."
 #   command -v   = checks if a command exists (returns 0=found, 1=not found)
 #   &>/dev/null  = redirect both stdout AND stderr to /dev/null (silence output)
 #   !            = negate the result (if NOT found...)
+
 check_cmd() {
   if ! command -v "$1" &> /dev/null; then
     echo "❌ $1 is not installed. Please install it and re-run."
@@ -131,6 +132,7 @@ echo "Setting up Python virtual environments..."
 
 # Reusable function to set up a Python venv for a service
 # $1 = SERVICE_DIR (first argument), $2 = SERVICE_NAME (second argument)
+
 setup_venv() {
   local SERVICE_DIR="$1"   # local = variable only exists inside this function
   local SERVICE_NAME="$2"

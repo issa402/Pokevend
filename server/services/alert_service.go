@@ -60,7 +60,9 @@ func (s *AlertService) Delete(ctx context.Context, alertID, userID string) error
 //
 // STEP 1: After completing Task 3 (adding GetUnreadCount to store),
 //         add this method to AlertService.
-//
+func (s *AlertService) GetUnreadCount(ctx context.Context, userID string) (int, error){
+	return s.alerts.GetUnreadCount(ctx, userID)
+}
 // Signature:
 //   func (s *AlertService) GetUnreadCount(ctx context.Context, userID string) (int, error)
 //

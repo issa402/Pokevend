@@ -106,6 +106,7 @@ func Register(
 			// PUT    /api/alerts/{id}/read       mark one alert read
 			// DELETE /api/alerts/{id}            delete one alert
 			r.Get("/alerts",             alerts.List)
+			r.Get("/alerts/unread-count",alerts.UnreadCount)
 			r.Put("/alerts/read-all",    alerts.MarkAllRead)
 			r.Put("/alerts/{id}/read",   alerts.MarkRead)
 			r.Delete("/alerts/{id}",     alerts.Delete)

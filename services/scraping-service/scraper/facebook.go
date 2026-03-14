@@ -139,10 +139,11 @@ func (s *FacebookScraper) Scrape(query string) (int, error) {
 
 	// Wait for listing elements to appear
 	// Facebook renders listings with this aria role
-	if err = page.WaitForSelector(
+	_, err = page.WaitForSelector(
 		"[data-testid='marketplace_feed_item'], div[style*='border-radius'] a[href*='/marketplace/item']",
 		playwright.PageWaitForSelectorOptions{Timeout: playwright.Float(15000)},
-	); err != nil {
+	)
+	if err != nil {
 		log.Printf("[Facebook] Listing selector timed out — page structure may have changed")
 		return 0, nil // Not a hard error — page loaded but no listings visible
 	}

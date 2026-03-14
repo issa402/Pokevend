@@ -109,7 +109,14 @@ func (h *AlertHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 //
 // After completing Tasks 3 and 4, add this method to AlertHandler.
-//
+func (h *AlertHandler) UnreadCount(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r)
+	if err := h.svc.UnreadCount(r.Context(), user.ID); err != nil {
+		pkg.Error(w, http.StatusInternalServerError, "failed to retrive count")
+		return 
+	}
+	pkg.JSON(w, http.StatusOK map[string]int{"unread": count})
+}
 // Signature:
 //   func (h *AlertHandler) UnreadCount(w http.ResponseWriter, r *http.Request)
 //

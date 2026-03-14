@@ -7,12 +7,13 @@
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
 
-# Download dependencies first (cached layer)
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy all source code and go.mod first
+COPY . .
+
+# Run go mod tidy to generate go.sum and download deps
+RUN go mod tidy
 
 # Build the binary
-COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./main.go
 
 # ---- Minimal runtime image ----

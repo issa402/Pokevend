@@ -16,6 +16,16 @@
 
 -- ── YOUR IMPLEMENTATION GOES HERE ─────────────────────────────
 -- Schema to create:
+CREATE TABLE IF NOT EXISTS price_alerts_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    card_name TEXT NOT NULL,
+    threshold DECIMAL(10,2) NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('BELOW', 'ABOVE')),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, card_name, direction)
+)
 --   price_alerts_settings table with:
 --     id UUID PK, user_id FK, card_name TEXT, threshold DECIMAL,
 --     direction TEXT ("BELOW"/"ABOVE"), is_active BOOL default true,
@@ -24,6 +34,13 @@
 -- Two indexes to create:
 --   1. idx_price_alerts_user ON (user_id)
 --   2. idx_price_alerts_active — PARTIAL INDEX on (user_id, is_active) WHERE is_active = true
+CREATE INDEX IF NOT EXISTS idx_price_alerts_active 
+    ON price_alerts_settings(card_name, is_actice)
+    WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_alerts_user_unread 
+    ON alerts(user_id, is_read)
+    WHERE is_read = false;
+
 
 -- TODO: Write your CREATE TABLE and CREATE INDEX statements here
 -- (delete this comment and put your SQL below)

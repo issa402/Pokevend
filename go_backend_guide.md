@@ -68,6 +68,7 @@ p := &x     // & = "address of" — p is *int pointing to x
 ### Slices (Dynamic Arrays)
 ```go
 // Create
+
 s := []string{"a", "b", "c"}
 s := make([]string, 0, 10)  // len=0, cap=10 (pre-allocated)
 
@@ -270,6 +271,7 @@ default:         // skip if channel full
 
 // Range over channel (reads until channel closed):
 for msg := range ch { process(msg) }
+
 
 // ── Mutex: protect shared data ────────────────────────────
 var mu sync.Mutex

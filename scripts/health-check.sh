@@ -35,7 +35,20 @@ set -euo pipefail
 #    → print ✓ or ✗
 #
 # 5. Print final "✅ All services healthy" or exit 1
+GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
+check_endpoint() {
+    local name ="$1"
+    local url -"$2"
+    local expected = "$3"
+    status = $(curl -s -o /dev/null -w "%{http_code}" "url")
+    if [[ "$status" == "$expected" ]]; then 
+        echo -e "${RED}✗${NC} $name is dead!"
+        exit 1
+    fi
 
+}
+check_endpoint() "GO API" "http://localhost:3000/health" 200
+check_endpoint() "FastAPI" "http://localhost:8001/docs" 200
 # TODO: Write your implementation below (delete this comment)
 
 

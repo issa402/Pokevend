@@ -47,6 +47,7 @@ type AlertStore interface {
 	Delete(ctx context.Context, id, userID string) error
 	Insert(ctx context.Context, alert models.Alert) (string, error) // returns new alert's UUID
 	GetWatchedAlerts(ctx context.Context, userID string) ([]models.Alert, error)
+	GetUnreadCount(ctx contetx.Context, userID string) (int, error)
 }
 
 // postgresAlertStore implements AlertStore with PostgreSQL.
@@ -58,6 +59,7 @@ type postgresAlertStore struct{ db *pgxpool.Pool }
 func NewAlertStore(db *pgxpool.Pool) AlertStore {
 	return &postgresAlertStore{db: db}
 }
+
 
 // ListByUser returns the most recent alerts for a user, newest first.
 // limit prevents loading thousands of alerts at once (pagination).
@@ -140,7 +142,18 @@ func (s *postgresAlertStore) GetWatchedAlerts(ctx context.Context, userID string
 // STEP 1: Add this line to the AlertStore interface above (between GetWatchedAlerts and the closing })
 //
 //   GetUnreadCount(ctx context.Context, userID string) (int, error)
-//
+func (s *postgresAlertStore) GetUnreadCount(ctx context.Context, userID string) (int, error) {
+	var count int
+	err:= s.db.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM alerts WHERE user_id = $1 AND is_read = false`, userID,
+		).Scan(&count)
+		if err != nil {
+			return 0, err
+		}
+		return count, nil
+
+}
 // STEP 2: Implement the method below on postgresAlertStore.
 // Signature:
 //

@@ -101,6 +101,7 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 	// (Worker is infrastructure-level, not HTTP-level, so it bypasses service layer here)
 	wlStore    := store.NewWatchlistStore(db)
 	alertStore := store.NewAlertStore(db)
+	priceStore := store.NewPriceAlertStore(db)
 
 	log.Println("[worker] Listening for listings on RabbitMQ...")
 
@@ -118,51 +119,46 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 		// Process each listing in a goroutine so we don't block the receive loop.
 		// If processListing takes 500ms, we can still receive the next message immediately.
 		// GO PATTERN: "fire and forget" goroutine per message (for non-critical processing)
-		go processListing(listing, wlStore, alertStore, mgr)
+		go processListing(listing, wlStore, alertStore, priceStore, mgr)
 		msg.Ack(false) // Ack = tell RabbitMQ we received and processed it (remove from queue)
 	}
 }
 
 // processListing matches an incoming listing against all watchlists.
 // Runs in a goroutine — concurrent with other listings being processed.
-func processListing(listing Listing, wl store.WatchlistStore, alerts store.AlertStore, mgr *handlers.SSEManager) {
+func processListing(listing Listing, alerts store.AlertStore, price store.PriceAlertStore, mgr *handlers.SSEManager) {
 	ctx := context.Background()
 
-	// Fetch all watchlist entries that have price targets set.
-	// We check EVERY entry against the listing. For scale: you'd filter by card_name in SQL.
-	watched, err := wl.GetWatchedCards(ctx)
+	// 1. Get the snipers for this specific card
+	activeSettings, err := price.GetActiveAlertsForCard(ctx, listing.CardName)
 	if err != nil {
-		log.Printf("[worker] watchlist query: %v", err)
-		return
+		log.Printf("[worker] price settings: %v", err)
+		return 
 	}
 
-	for _, item := range watched {
-		// Only process watchlist items that match this card name (exact match for now)
-		if item.CardName != listing.CardName {
-			continue
-		}
-
-		// ── Business Logic: Should this trigger an alert? ──────────
+	// START THE LOOP
+	for _, setting := range activeSettings {
 		var alertType, message string
-		if item.TargetBuyPrice != nil && listing.Price <= *item.TargetBuyPrice {
-			// Price dropped BELOW the user's target buy price → good time to buy!
+
+		// 2. The Math Logic
+		if setting.Direction == "BELOW" && listing.Price <= setting.Threshold {
 			alertType = "PRICE_DROP"
-			message = fmt.Sprintf("%s dropped to $%.2f on %s (your target: $%.2f)",
-				listing.CardName, listing.Price, listing.Marketplace, *item.TargetBuyPrice)
-		} else if item.TargetSellPrice != nil && listing.Price >= *item.TargetSellPrice {
-			// Price rose ABOVE the user's target sell price → good time to sell!
+			message = fmt.Sprintf("🔥 %s dropped to $%.2f on %s (Target: $%.2f)",
+				listing.CardName, listing.Price, listing.Marketplace, setting.Threshold)
+
+		} else if setting.Direction == "ABOVE" && listing.Price >= setting.Threshold {
 			alertType = "PRICE_SPIKE"
-			message = fmt.Sprintf("%s hit $%.2f on %s (your target: $%.2f)",
-				listing.CardName, listing.Price, listing.Marketplace, *item.TargetSellPrice)
-		}
-		if alertType == "" {
-			continue // no threshold triggered for this item
+			message = fmt.Sprintf("📈 %s hit $%.2f on %s (Target: $%.2f)",
+				listing.CardName, listing.Price, listing.Marketplace, setting.Threshold)
 		}
 
-		// ── Persist Alert ──────────────────────────────────────────
-		// Store in PostgreSQL so it shows in the alerts panel even after page refresh
+		if alertType == "" {
+			continue 
+		}
+
+		// 3. Persist Alert (INSIDE THE LOOP)
 		alert := models.Alert{
-			UserID:      item.UserID,
+			UserID:      setting.UserID, // Corrected!
 			CardName:    &listing.CardName,
 			AlertType:   alertType,
 			Message:     message,
@@ -176,9 +172,7 @@ func processListing(listing Listing, wl store.WatchlistStore, alerts store.Alert
 			continue
 		}
 
-		// ── Push via SSE ───────────────────────────────────────────
-		// Serialize the alert as JSON and push to the user's browser connections.
-		// mgr.SendToUser is goroutine-safe (uses RWMutex internally).
+		// 4. Push via SSE (INSIDE THE LOOP)
 		payload, _ := json.Marshal(map[string]interface{}{
 			"type":        alertType,
 			"id":          alertID,
@@ -189,9 +183,12 @@ func processListing(listing Listing, wl store.WatchlistStore, alerts store.Alert
 			"listingUrl":  listing.ListingURL,
 			"timestamp":   time.Now().Format(time.RFC3339),
 		})
-		mgr.SendToUser(item.UserID, string(payload))
-	}
-}
+		mgr.SendToUser(setting.UserID, string(payload)) // Fixed: use setting.UserID
+	} // <--- This bracket ends the loop
+} // <--- This bracket ends the function
+
+
+
 
 // TODO #1 (Practice): Add retry logic for failed DB inserts
 // If alerts.Insert() fails (e.g., DB briefly unavailable), the alert is lost.

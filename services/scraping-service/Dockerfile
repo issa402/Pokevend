@@ -5,17 +5,20 @@
 
 FROM golang:1.21-bookworm AS builder
 WORKDIR /app
-COPY go.mod go.sum* ./
-RUN go mod download
 COPY . .
+RUN go mod tidy && go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -o scraper ./main.go
 
-FROM mcr.microsoft.com/playwright/go:v0.3702.0-bookworm
+FROM debian:bookworm-slim
 WORKDIR /app
-COPY --from=builder /app/scraper .
 
-# Install Playwright browsers (Chromium only to save space)
-RUN playwright install chromium --with-deps
+# Install minimal dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/scraper .
 
 RUN useradd -m scrapeuser && chown -R scrapeuser /app
 USER scrapeuser
