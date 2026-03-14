@@ -97,14 +97,27 @@ class EbayService:
                 scraped_at=datetime.utcnow(),
             )
             listings.append(listing)
+        if listings:
+            payloads = [l.model_dump(mode = "json") for l in listings]
+            await self.publisher.publish("listings", payloads)
+            logger.info(f"eBay: published {len(listings)} listings for '{card_name}'")
 
             # Publish to RabbitMQ — Go's notification_worker.go consumes this
             # model_dump(mode="json") = serialize Pydantic model to JSON-compatible dict
             # datetime objects serialized as ISO 8601 strings
-            await self.publisher.publish("listings", listing.model_dump(mode="json"))
+            
 
-        logger.info(f"eBay: published {len(listings)} listings for '{card_name}'")
+        
         return listings
+
+    async def publish_batch(self, routing_key: str, messages: List[dict]):
+        if not messages:
+            return 
+        try:
+            await self.publisher.publish_batch(routing_key, messages)
+            logeer.info(f"Count of messages {len(messages)}")
+        except Exception as e:
+            logger.error(f"Failed to publish batch to {routing_key}: {e}")
 
 # ============================================================
 # TODO #1 (Practice): Add price range filtering
