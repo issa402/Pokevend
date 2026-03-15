@@ -620,3 +620,517 @@ DELETE FROM alerts WHERE created_at < NOW() - INTERVAL '30 days' AND is_read=tru
 | 8 | Trending cards feed | UPDATE score | `GetTrending` + handler | `numpy` regression | psql seed + curl |
 | 9 | API key management | Encrypted keys | crypto + api_key_store + handler | DB credential loading | store + verify encrypted |
 | 10 | Graceful shutdown | DELETE old alerts | `signal.Notify` + cleanup ticker | `task.cancel()` in lifespan | `docker kill --signal=SIGTERM` |
+
+---
+
+## Task 11 — Write Your First Go Unit Test
+
+> **Files for this task:**
+> - `server/services/` — new `auth_service_test.go`
+> - No SQL, No Python, No Bash (tests are pure Go)
+
+**What you're building:** A real unit test for `AuthService.HashPassword` that verifies bcrypt hashing is producing valid output without a DB.
+
+### SQL
+No DB needed — unit tests mock their dependencies. That's the point.
+
+### Go — create `server/services/auth_service_test.go`
+```go
+package services_test  // _test = only compiled during test runs
+
+import (
+    "testing"
+    "pokemontool/services"
+    // go test automatically finds files ending in _test.go
+)
+
+// Test function MUST start with "Test" + capital letter
+func TestHashPassword(t *testing.T) {
+    svc := services.NewAuthService(nil, nil, nil, "test-jwt-secret")
+    // nil dependencies: unit tests don't need a real DB
+    // This is WHY we use dependency injection — testability
+
+    hash, err := svc.HashPassword("mypassword123")
+
+    // t.Fatal: marks test failed + stops the test immediately
+    // t.Error: marks test failed but continues
+    if err != nil {
+        t.Fatalf("HashPassword returned error: %v", err)
+    }
+    if len(hash) == 0 {
+        t.Error("expected non-empty hash")
+    }
+    if hash == "mypassword123" {
+        t.Error("hash should not equal plaintext password")
+    }
+}
+
+func TestCheckPassword(t *testing.T) {
+    svc := services.NewAuthService(nil, nil, nil, "test-jwt-secret")
+    hash, _ := svc.HashPassword("correct-horse")
+
+    // Test correct password
+    if err := svc.CheckPassword(hash, "correct-horse"); err != nil {
+        t.Errorf("correct password should pass: %v", err)
+    }
+
+    // Test wrong password
+    if err := svc.CheckPassword(hash, "wrong-horse"); err == nil {
+        t.Error("wrong password should fail, got nil error")
+    }
+}
+```
+
+### Python — add `pytest` test
+Create `services/api-consumer/tests/test_schemas.py`:
+```python
+from models.schemas import EbayListing
+
+def test_ebay_listing_valid():
+    listing = EbayListing(
+        card_name="Charizard",
+        price=89.99,
+        marketplace="ebay",
+        listing_url="https://ebay.com/itm/1234",
+    )
+    assert listing.card_name == "Charizard"
+    assert listing.price == 89.99
+
+def test_ebay_listing_invalid_price():
+    # Pydantic should reject negative prices
+    try:
+        EbayListing(card_name="Pikachu", price=-5.00,
+                    marketplace="ebay", listing_url="https://ebay.com/1")
+        assert False, "Should have raised ValidationError"
+    except Exception:
+        pass  # Expected
+```
+
+### Bash
+```bash
+# Run Go tests
+cd server && go test ./services/... -v -run TestHashPassword
+# -v = verbose (shows PASS/FAIL for each test)
+# -run TestHashPassword = run only tests matching this name regex
+
+# Run ALL Go tests
+cd server && go test ./...
+
+# Run Python tests (install pytest first)
+pip install pytest
+cd services/api-consumer && python3 -m pytest tests/ -v
+```
+
+---
+
+## Task 12 — SQL Transactions + ACID
+
+> **Files for this task:**
+> - `server/store/inventory_store.go` (Go) — use pgx transaction
+> - `services/analytics-engine/repositories/card_repo.py` (Python) — explicit commit/rollback
+> - No new SQL file — transactions are in application code
+
+**What you're building:** When a user adds a card to inventory AND it updates the card's inventory count atomically — both succeed or both fail together.
+
+### SQL (no file — transactions are code-level)
+```sql
+-- A transaction is a GROUP of SQL statements that must ALL succeed:
+BEGIN;
+    INSERT INTO inventory(user_id, card_id, quantity) VALUES($1, $2, $3);
+    UPDATE cards SET updated_at = NOW() WHERE card_id = $2;
+COMMIT;
+-- If INSERT succeeds but UPDATE fails → ROLLBACK rolls BOTH back
+-- ACID: Atomicity (all or nothing), Consistency, Isolation, Durability
+
+-- Without transaction (DANGEROUS):
+INSERT INTO inventory...;  -- succeeds
+UPDATE cards...;           -- fails → inventory row exists but cards not updated → INCONSISTENT STATE
+```
+
+### Go — `server/store/inventory_store.go`
+```go
+// Add: InsertWithTransaction(ctx, userID, cardID string, qty int) error
+func (s *postgresInventoryStore) InsertWithTransaction(ctx context.Context, userID, cardID string, qty int) error {
+    // 1. tx, err := s.db.Begin(ctx)
+    // 2. defer tx.Rollback(ctx)  ← rolls back if we return early with error
+    // 3. tx.Exec(ctx, "INSERT INTO inventory...")
+    // 4. tx.Exec(ctx, "UPDATE cards SET updated_at=NOW()...")
+    // 5. return tx.Commit(ctx)   ← only commits if we reach here
+    //
+    // pgx transaction: pool.Begin(ctx) → returns pgx.Tx
+    // pgx.Tx has same methods as pool: Query, Exec, QueryRow
+}
+```
+
+### Python — `services/analytics-engine/repositories/card_repo.py`
+Add explicit error handling around transactions:
+```python
+def bulk_update_prices(self, updates: List[dict]) -> int:
+    """
+    Update multiple cards' prices in one transaction.
+    All updates succeed or none do.
+    
+    psycopg2 transactions:
+    - conn.autocommit = False (default): every statement is in a transaction
+    - conn.commit(): apply all changes
+    - conn.rollback(): undo all changes since last commit
+    """
+    updated = 0
+    try:
+        with self.conn.cursor() as cur:
+            for update in updates:
+                cur.execute(
+                    "UPDATE cards SET price_tcgplayer=%s, updated_at=NOW() WHERE card_id=%s",
+                    (update["price"], update["card_id"])
+                )
+                updated += cur.rowcount
+        self.conn.commit()   # write ALL updates atomically
+        return updated
+    except Exception as e:
+        self.conn.rollback() # undo ALL updates if any one fails
+        raise  # re-raise so caller knows it failed
+```
+
+### Bash
+```bash
+# Verify ACID — simulate a transaction failure
+docker exec -it pokemontool_postgres psql -U pokemontool_user -d pokemontool -c "
+BEGIN;
+INSERT INTO inventory(user_id, card_id, quantity)
+SELECT id, 'base1-4', 1 FROM users LIMIT 1;
+-- Intentionally fail the second statement:
+INSERT INTO inventory(user_id, card_id, quantity) VALUES('bad-uuid', 'base1-4', 1);
+COMMIT;
+"
+# Result: ERROR on second INSERT → ROLLBACK → zero rows inserted
+# Verify with:
+docker exec -it pokemontool_postgres psql -U pokemontool_user -d pokemontool \
+  -c "SELECT COUNT(*) FROM inventory WHERE card_id='base1-4';"
+# Should be 0 if you hadn't inserted before
+```
+
+---
+
+## Task 13 — Python OOP: Abstract Base Class for Repositories
+
+> **Files for this task:**
+> - `services/api-consumer/repositories/base_repo.py` (Python) — new abstract base class
+> - `services/api-consumer/repositories/ebay_repo.py` (Python) — inherit from base
+> - `services/analytics-engine/repositories/card_repo.py` (Python) — same pattern
+
+**What you're building:** A shared `BaseRepository` that all repos inherit from. Teaches the Python OOP pattern used in production codebases.
+
+### SQL
+No changes — this is a Python architecture task.
+
+### Go
+No changes — Go uses interfaces, not inheritance. This task is Python-focused.
+
+### Python — create `services/api-consumer/repositories/base_repo.py`
+```python
+"""
+Base class for all repositories.
+Teaches: ABC (Abstract Base Class), @abstractmethod, inheritance, __init_subclass__
+
+PYTHON OOP KEY CONCEPTS:
+  class Foo(Bar): Foo inherits from Bar (gets all Bar methods)
+  super().__init__(): call the parent class's __init__
+  @abstractmethod: subclass MUST implement this method
+  ABC: Abstract Base Class — cannot be instantiated directly
+
+FAANG PATTERN: Repository Base Class
+  All repos share: connection management, logging, error formatting.
+  Putting these in a base class = DRY principle.
+  New repos inherit for free — just implement the abstract methods.
+"""
+import logging
+from abc import ABC, abstractmethod
+
+import psycopg2
+
+
+class BaseRepository(ABC):  # ABC = Abstract Base Class
+    """
+    Base class for all database repositories.
+    Provides: connection, cursor context manager, logging.
+    
+    ABC: you cannot do BaseRepository() — it's abstract.
+    You must subclass it and implement all @abstractmethod methods.
+    """
+
+    def __init__(self, conn: psycopg2.extensions.connection):
+        # super().__init__() would call ABC.__init__ — not needed here but good practice
+        self.conn = conn
+        self.logger = logging.getLogger(self.__class__.__name__)
+        # self.__class__.__name__ = the name of the SUBCLASS, not "BaseRepository"
+        # So CardRepo's logger is named "CardRepo", EbayRepo's is "EbayRepo"
+        # This makes log lines instantly tell you which repo had an issue
+
+    def _execute(self, sql: str, params: tuple = ()) -> list:
+        """
+        Execute a SELECT query and return all rows.
+        Protected method (single underscore = "don't call from outside the class").
+        """
+        with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+
+    def _execute_write(self, sql: str, params: tuple = ()) -> int:
+        """
+        Execute INSERT/UPDATE/DELETE and commit.
+        Returns the number of affected rows.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            affected = cur.rowcount
+        self.conn.commit()
+        return affected
+
+    @abstractmethod  # <- subclass MUST implement this
+    def health_check(self) -> bool:
+        """Return True if the repository can reach its data source."""
+        ...  # ... = "not implemented" (same as pass but more intentional)
+```
+
+Then update `EbayRepo` (and `CardRepo`) to inherit:
+```python
+from repositories.base_repo import BaseRepository
+
+class EbayRepo(BaseRepository):
+    def __init__(self, conn):
+        super().__init__(conn)  # call BaseRepository.__init__
+
+    def health_check(self) -> bool:
+        try:
+            self._execute("SELECT 1")  # inherited from BaseRepository
+            return True
+        except Exception:
+            return False
+```
+
+### Bash
+```bash
+# Verify the class works without a real DB connection (Python REPL)
+cd services/api-consumer
+python3 -c "
+from repositories.base_repo import BaseRepository
+
+# This should fail — ABC cannot be instantiated directly
+try:
+    b = BaseRepository(None)
+    print('ERROR: should have raised TypeError')
+except TypeError as e:
+    print(f'Correct! BaseRepository cannot be instantiated: {e}')
+"
+```
+
+---
+
+## Task 14 — Bash: Cron Job + Log Rotation
+
+> **Files for this task:**
+> - `scripts/cron_scan.sh` — new cron-compatible scan trigger script
+> - `scripts/rotate_logs.sh` — new log rotation script
+> - No Go changes, No SQL changes, No Python changes (this is pure Bash + Linux)
+
+**What you're building:** Two production operations scripts — one that triggers a scan on a schedule (usable by cron), one that cleans up old log files so your disk doesn't fill up.
+
+### SQL (no file — cron is OS-level)
+```bash
+# What is cron? The Linux job scheduler.
+# crontab -e to edit, format:
+#   minute hour day month weekday command
+#   *      *    *   *     *       = "every" (wildcard)
+# 
+# Examples:
+#   0 * * * *  = every hour at :00
+#   */5 * * * * = every 5 minutes
+#   0 2 * * *  = every day at 2am
+#   0 9 * * 1  = every Monday at 9am
+```
+
+### Go
+No changes — this is infrastructure not app code.
+
+### Python — No changes either. Cron will trigger the Python service via a REST call.
+
+### Bash — create `scripts/cron_scan.sh`
+```bash
+#!/usr/bin/env bash
+# ============================================================
+# FILE: scripts/cron_scan.sh
+# PURPOSE: Trigger a card price scan on a schedule via cron
+#
+# INSTALL:
+#   crontab -e
+#   # Run every hour:
+#   0 * * * * /opt/pokemontool/scripts/cron_scan.sh >> /var/log/pokemontool/scan.log 2>&1
+#   # >> appends to log file (don't use > or you'll overwrite)
+#   # 2>&1 redirects stderr to stdout (both go to the log file)
+# ============================================================
+set -euo pipefail
+
+LOG_FILE="/var/log/pokemontool/scan.log"
+FASTAPI_URL="${FASTAPI_URL:-http://localhost:8001}"
+
+# Timestamp every log line (cron doesn't add timestamps)
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
+
+log "=== Scan triggered by cron ==="
+
+# Trigger the FastAPI webhook endpoint
+response=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST "$FASTAPI_URL/webhook/scan" \
+    -H "Content-Type: application/json" \
+    -d '{"source": "cron", "cards": ["Charizard", "Pikachu"]}')
+
+if [[ "$response" == "200" ]]; then
+    log "✓ Scan triggered successfully (HTTP $response)"
+else
+    log "✗ Scan trigger failed (HTTP $response)"
+    exit 1
+fi
+```
+
+Create `scripts/rotate_logs.sh`:
+```bash
+#!/usr/bin/env bash
+# ============================================================
+# FILE: scripts/rotate_logs.sh
+# PURPOSE: Rotate logs older than 7 days to prevent disk fill
+#
+# WHAT IS LOG ROTATION?
+# Services write logs continuously. Without rotation:
+# /var/log/pokemontool/app.log → grows to 50GB → disk full → crash
+# With rotation: keep 7 days, compress old logs, delete older ones.
+#
+# Real production uses: logrotate (system tool) or cloud logging.
+# This script teaches the concept manually first.
+#
+# INSTALL:
+#   crontab -e
+#   0 0 * * * /opt/pokemontool/scripts/rotate_logs.sh
+#   (runs at midnight every day)
+# ============================================================
+set -euo pipefail
+
+LOG_DIR="/var/log/pokemontool"
+KEEP_DAYS=7
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
+
+log "=== Log rotation started ==="
+
+# Create log directory if it doesn't exist
+mkdir -p "$LOG_DIR"
+
+# find: search for files
+# -name "*.log": files ending in .log
+# -mtime +7: modified more than 7 days ago
+# -exec: run command on each found file
+# {}: placeholder for the filename
+# \;: end of -exec command
+find "$LOG_DIR" -name "*.log" -mtime "+$KEEP_DAYS" -exec gzip {} \;
+log "✓ Compressed logs older than $KEEP_DAYS days"
+
+# Delete compressed logs older than 30 days
+find "$LOG_DIR" -name "*.log.gz" -mtime +30 -delete
+log "✓ Deleted compressed logs older than 30 days"
+
+# Show current log disk usage
+du -sh "$LOG_DIR" 2>/dev/null && log "Log dir size: $(du -sh "$LOG_DIR" | cut -f1)"
+```
+
+### Bash (install the cron job)
+```bash
+# Make scripts executable
+chmod +x scripts/cron_scan.sh scripts/rotate_logs.sh
+
+# Test manually first (before adding to cron)
+./scripts/cron_scan.sh
+./scripts/rotate_logs.sh
+
+# View current crontab
+crontab -l
+
+# Add to cron (opens vim or nano):
+crontab -e
+# Add: 0 * * * * /opt/pokemontool/scripts/cron_scan.sh >> /tmp/scan.log 2>&1
+# Add: 0 0 * * * /opt/pokemontool/scripts/rotate_logs.sh >> /tmp/rotate.log 2>&1
+```
+
+---
+
+## Task 15 — CI/CD: Set Up GitHub Actions + Push to Trigger It
+
+> **Files for this task:**
+> - `.github/workflows/ci.yml` ← already created for you
+> - `.github/workflows/deploy.yml` ← already created for you
+> - This task is about CONFIGURING GitHub to use them
+
+**What you're building:** Get GitHub Actions actually running on your repo. Push code → GitHub automatically builds and checks it.
+
+### SQL
+No changes.
+
+### Go
+No changes — the CI pipeline builds your existing Go code.
+
+### Python — add `ruff` and `mypy` to `requirements.txt`
+In `services/api-consumer/requirements.txt`, add:
+```
+ruff>=0.3.0
+mypy>=1.9.0
+```
+The CI pipeline installs these and runs them against your code.
+
+### Bash — push your code and set secrets
+```bash
+# Step 1: Push your code to GitHub
+cd C:\Users\isjim\OneDrive\Desktop\Pokemon
+git init  # if not already a git repo
+git add .
+git commit -m "feat: add CI/CD workflows, automation scripts, practice tasks"
+git remote add origin https://github.com/YOUR_USERNAME/Pokemon.git
+git push -u origin main
+
+# Step 2: Watch CI run
+# Go to: https://github.com/YOUR_USERNAME/Pokemon/actions
+# You should see the "CI" workflow running
+# Click into it to see each job's output
+
+# Step 3: Set deploy secrets (for the deploy.yml workflow)
+# Go to: GitHub → Repo → Settings → Secrets and variables → Actions
+# Add:
+#   EC2_HOST     = your EC2 public IP (e.g. 54.123.45.67)
+#   EC2_USER     = ubuntu
+#   EC2_SSH_KEY  = contents of your .pem file (cat ~/pokemontool.pem)
+
+# Step 4: Verify ruff passes locally before pushing
+pip install ruff
+cd services/api-consumer && ruff check .
+# Fix any issues it reports, then push again
+```
+
+---
+
+## Updated Quick Reference (All 15 Tasks)
+
+| Task | Feature | Hardest Concept |
+|------|---------|-----------------|
+| 1 | Unread badge endpoint | Partial SQL index |
+| 2 | Price alert settings | New migration + worker logic |
+| 3 | Card detail + history | `errgroup` concurrent fetch |
+| 4 | Full health check | Pinging DB/Redis in handler |
+| 5 | Watchlist price scan | End-to-end flow |
+| 6 | Deal of the day | UPSERT + scheduler |
+| 7 | Inventory portfolio | JOIN + server-side aggregation |
+| 8 | Trending cards | numpy linear regression |
+| 9 | API key management | AES encryption in Go |
+| 10 | Graceful shutdown | `signal.Notify` + `task.cancel()` |
+| 11 | Go unit tests | `testing.T`, mocking with nil deps |
+| 12 | SQL transactions | `BEGIN/COMMIT/ROLLBACK` + pgx.Tx |
+| 13 | Python OOP | ABC, `@abstractmethod`, inheritance |
+| 14 | Cron + log rotation | `crontab`, `find -mtime`, `gzip` |
+| 15 | Live CI/CD | GitHub Actions secrets + push trigger |
+

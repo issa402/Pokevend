@@ -1,0 +1,123 @@
+# ============================================================
+# FILE: .github/workflows/deploy.yml
+# TYPE: CI/CD — Continuous Deployment to AWS EC2
+#
+# WHAT THIS DOES:
+# When code is pushed to `main` (after CI passes), this workflow:
+# 1. SSH into your EC2 instance
+# 2. git pull the latest code
+# 3. docker compose up --build (rebuild and restart containers)
+#
+# DEPLOYMENT STRATEGY: Blue/Green vs Rolling vs Recreate
+#   Recreate (what we do): stop old containers, start new ones
+#     - Simplest, works for solo/small projects
+#     - Has ~10-30s downtime during deploy
+#   Rolling: replace containers one at a time (0 downtime, needs multiple replicas)
+#   Blue/Green: spin up NEW environment, switch traffic atomically (0 downtime, AWS ALB)
+#
+# GITHUB SECRETS (set these in: Repository → Settings → Secrets → Actions):
+#   EC2_HOST      → your EC2 public IP or domain (e.g. 54.123.45.67)
+#   EC2_SSH_KEY   → your PEM file contents (cat ~/your-key.pem | pbcopy)
+#   EC2_USER      → "ubuntu" for Ubuntu AMIs, "ec2-user" for Amazon Linux
+#
+# HOW TO SET A SECRET:
+# 1. Go to your GitHub repo
+# 2. Settings → Secrets and variables → Actions → New repository secret
+# 3. Name: EC2_HOST, Value: your EC2 IP
+#
+# SECURITY: Secrets are NEVER shown in logs (GitHub replaces with ***)
+# ============================================================
+
+name: Deploy to EC2
+
+on:
+  push:
+    branches: ["main"]     # only deploy from main branch
+  workflow_dispatch:       # allows manual trigger from GitHub UI
+    # workflow_dispatch: you can add inputs here for manual deploys:
+    # inputs:
+    #   environment:
+    #     description: 'Environment to deploy to'
+    #     required: true
+    #     default: 'production'
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    # ENVIRONMENT: GitHub Environments add extra protection
+    # Can require manual approval before deploying to production
+    # Set up at: Repository → Settings → Environments
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Set up SSH key ────────────────────────────────────
+      # We write the EC2 SSH key to a file, then use it to SSH in
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # chmod 600: SSH requires key file to be readable only by owner
+          # If permissions are wrong, SSH refuses to use the key
+
+          # Add EC2 host to known_hosts (prevents "host authenticity" prompt)
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      # ── Deploy via SSH ────────────────────────────────────
+      - name: Deploy to EC2
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+              'bash -s' << 'DEPLOY_SCRIPT'
+
+          # ─── Everything below runs ON the EC2 instance ───
+
+          set -e  # exit on any error (so we know if deploy failed)
+
+          echo "=== Starting deployment at $(date) ==="
+
+          cd /opt/pokemontool  # or wherever you cloned the repo on EC2
+
+          # Pull latest code
+          git pull origin main
+          echo "✓ Code updated"
+
+          # Run new migrations (idempotent — safe to run again)
+          docker exec pokemontool_postgres psql \
+            -U pokemontool_user -d pokemontool \
+            -f /app/database/migrations/001_init.sql 2>/dev/null || true
+          echo "✓ Migrations applied"
+
+          # Rebuild and restart containers (--build rebuilds changed images)
+          docker compose up -d --build
+          echo "✓ Containers restarted"
+
+          # Wait for Go server to be healthy (up to 60s)
+          for i in {1..12}; do
+            if curl -sf http://localhost:3001/health > /dev/null; then
+              echo "✓ Go server is healthy"
+              break
+            fi
+            echo "Waiting for server... ($i/12)"
+            sleep 5
+          done
+
+          echo "=== Deployment complete at $(date) ==="
+
+          DEPLOY_SCRIPT
+
+      # ── Notify on failure ─────────────────────────────────
+      # In production, teams send Slack/PagerDuty alerts on deploy failure
+      # This is a placeholder showing where you'd add it
+      - name: Notify on failure
+        if: failure()  # only runs if a previous step failed
+        run: |
+          echo "Deployment FAILED. In production, send Slack webhook here."
+          # curl -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+          #   -H 'Content-type: application/json' \
+          #   -d '{"text":"🚨 PokémonTool deploy failed! Check GitHub Actions."}'

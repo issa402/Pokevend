@@ -1,0 +1,130 @@
+# ============================================================
+# FILE: docker-compose.prod.yml
+# TYPE: Production Infrastructure Definition
+#
+# WHAT IS THIS?
+# A slightly modified version of our local docker-compose.yml 
+# optimized for AWS EC2 Cloud deployment.
+#
+# WHAT IS DIFFERENT FROM LOCAL?
+# 1. restart: always → If the EC2 instance reboots, or if a Go 
+#    panic crashes the app, Docker will instantly reboot it.
+# 2. Port Hiding → In our local compose file, Postgres exposes
+#    "5432:5432". In production, we DO NOT expose the database 
+#    ports to the internet. We only expose Go (3001) and Python (8001).
+# ============================================================
+
+version: '3.8'
+
+services:
+  # ────────────────────────────────────────────────────────
+  # 1. PostgreSQL (Database)
+  # ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: pokemontool_postgres
+    restart: always  # Production: Auto-restart on crash
+    environment:
+      - POSTGRES_USER=pokemontool_user
+      - POSTGRES_PASSWORD=pokemontool_pass
+      - POSTGRES_DB=pokemontool
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pokemontool_user -d pokemontool"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # NO "ports:" section! 
+    # This database is intentionally invisible to the internet.
+    # Go and Python can still connect using "postgres:5432" because 
+    # they are on the same internal Docker network.
+
+  # ────────────────────────────────────────────────────────
+  # 2. Redis (Caching)
+  # ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pokemontool_redis
+    restart: always  # Production: Auto-restart on crash
+    # NO "ports:" section. Invisible to internet.
+
+  # ────────────────────────────────────────────────────────
+  # 3. RabbitMQ (Message Broker / Queues)
+  # ────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: pokemontool_rabbitmq
+    restart: always  # Production: Auto-restart on crash
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    # NO "ports:" section. Invisible to internet.
+
+  # ────────────────────────────────────────────────────────
+  # 4. Go Backend API (Consumer / Server)
+  # ────────────────────────────────────────────────────────
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: pokemontool_go
+    restart: always  # Production: Auto-restart on crash
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    ports:
+      - "3001:3001" # Exposed to internet! (Our EC2 Security Group allows this)
+    environment:
+      - PORT=3001
+      - DB_URL=postgres://pokemontool_user:pokemontool_pass@postgres:5432/pokemontool
+      - REDIS_URL=redis:6379
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - ENVIRONMENT=production
+      - JWT_SECRET=super_secret_production_key_change_me
+      - ENCRYPTION_KEY=super_secret_32_byte_aes_key_change_me!
+
+  # ────────────────────────────────────────────────────────
+  # 5. Python API Consumer (API / Scraper Gateway)
+  # ────────────────────────────────────────────────────────
+  api-consumer:
+    build:
+      context: ./services/api-consumer
+      dockerfile: Dockerfile
+    container_name: pokemontool_api_consumer
+    restart: always  # Production: Auto-restart on crash
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8001" # Exposed to internet! (Our EC2 Security Group allows this)
+    environment:
+      - DB_URL=postgres://pokemontool_user:pokemontool_pass@postgres:5432/pokemontool
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - EBAY_CLIENT_ID=${EBAY_CLIENT_ID:-}
+      - EBAY_CLIENT_SECRET=${EBAY_CLIENT_SECRET:-}
+
+  # ────────────────────────────────────────────────────────
+  # 6. Python Analytics Engine (Background Scheduler)
+  # ────────────────────────────────────────────────────────
+  analytics-engine:
+    build:
+      context: ./services/analytics-engine
+      dockerfile: Dockerfile
+    container_name: pokemontool_analytics
+    restart: always  # Production: Auto-restart on crash
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB_URL=postgres://pokemontool_user:pokemontool_pass@postgres:5432/pokemontool
+
+volumes:
+  pgdata:
+    # Docker manages this volume. If the container dies, the data persists on the EC2 drive.

@@ -1,0 +1,210 @@
+# ============================================================
+# FILE: .github/workflows/ci.yml
+# TYPE: CI/CD — Continuous Integration Pipeline
+#
+# WHAT IS GITHUB ACTIONS?
+# GitHub Actions = automated workflows that run on GitHub's servers.
+# Every time you push code, GitHub spins up a fresh Linux VM,
+# runs your steps, and reports PASS ✓ or FAIL ✗ on the PR.
+#
+# WHY CI/CD IS NON-NEGOTIABLE AT FAANG:
+# Without CI: "works on my machine" ships to production daily.
+# With CI: every PR is automatically built + tested before merge.
+# At Google, every PR must pass automated checks before a human reviews it.
+# At Stripe, CI runs ~4000 tests per push.
+#
+# YAML CONCEPTS:
+#   on:           → trigger conditions (when does this workflow run?)
+#   jobs:         → independent groups of steps (can run in parallel)
+#   runs-on:      → what OS/VM to use (ubuntu-latest = fresh Ubuntu VM)
+#   steps:        → ordered list of commands in a job
+#   uses:         → a reusable action from the GitHub Marketplace
+#   run:          → a shell command (bash by default)
+#   env:          → environment variables available to the step
+#   secrets:      → encrypted variables stored in GitHub repo settings
+#
+# KEY ACTIONS FROM MARKETPLACE:
+#   actions/checkout@v4    → clones your repo into the VM
+#   actions/setup-go@v5    → installs Go at a specific version
+#   actions/setup-python@v5 → installs Python
+#
+# HOW TO READ STATUS BADGES:
+# Add this to your README.md:
+#   ![CI](https://github.com/YOUR_USERNAME/Pokemon/actions/workflows/ci.yml/badge.svg)
+# ============================================================
+
+name: CI  # Name shown in the GitHub Actions tab
+
+# TRIGGER: when does this workflow run?
+on:
+  push:
+    branches: ["main", "develop"]   # run on pushes to these branches
+  pull_request:
+    branches: ["main"]              # run on PRs targeting main
+
+# Default shell for all run steps
+defaults:
+  run:
+    shell: bash
+
+# ──────────────────────────────────────────────────────────
+# JOB 1: Go — Build + Vet
+# Catches: compile errors, type errors, import issues
+# ──────────────────────────────────────────────────────────
+jobs:
+  go-build:
+    name: Go Build & Vet
+    runs-on: ubuntu-latest  # fresh Ubuntu VM every run
+
+    steps:
+      # Step 1: checkout your code into the VM
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # Without this, the VM has no code to build
+
+      # Step 2: install Go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"        # pin exact version — reproducible builds
+          cache: true               # cache go modules between runs (faster CI)
+
+      # Step 3: download dependencies
+      - name: Download Go modules
+        run: cd server && go mod download
+        # go.sum ensures exact versions — no surprise updates
+
+      # Step 4: compile (catches type errors, missing imports)
+      - name: Build
+        run: cd server && go build ./...
+        # ./... = all packages in the server directory
+        # This is the #1 check: if it doesn't compile, it doesn't ship
+
+      # Step 5: vet (catches common runtime bugs at compile time)
+      - name: Go vet
+        run: cd server && go vet ./...
+        # go vet finds: unreachable code, bad format strings, mutex copying
+        # It's a free static analysis pass that finds real bugs
+
+      # Step 6: run tests (if you have them — see practice_tasks.md Task 11)
+      - name: Run tests
+        run: cd server && go test ./... -timeout 30s
+        # -timeout 30s: if a test hangs, fail after 30 seconds
+        # This step will PASS if there are no test files (0 tests run = success)
+
+  # ────────────────────────────────────────────────────────
+  # JOB 2: Go scraping service
+  # ────────────────────────────────────────────────────────
+  go-scraper-build:
+    name: Go Scraper Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: Build scraping service
+        run: cd services/scraping-service && go build ./...
+
+  # ────────────────────────────────────────────────────────
+  # JOB 3: Python — Lint + Type Check
+  # Catches: undefined variables, type mismatches, bad imports
+  # ────────────────────────────────────────────────────────
+  python-lint:
+    name: Python Lint & Types
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ["api-consumer", "analytics-engine"]
+        # matrix: run this job ONCE PER SERVICE (parallel!)
+        # GitHub runs these simultaneously — not sequentially
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install linting tools
+        run: |
+          pip install ruff mypy
+          # ruff: extremely fast Python linter (written in Rust)
+          # mypy: Python type checker (catches type annotation violations)
+          # Both are standard tools at FAANG Python teams
+
+      - name: Install service dependencies
+        run: |
+          cd services/${{ matrix.service }}
+          pip install -r requirements.txt
+          # ${{ matrix.service }} = substitutes "api-consumer" or "analytics-engine"
+          # GitHub Actions templates use ${{ }} for expressions
+
+      - name: Ruff lint
+        run: |
+          cd services/${{ matrix.service }}
+          ruff check . --output-format=github
+          # --output-format=github: shows lint errors inline on GitHub PR diffs
+
+      - name: Mypy type check
+        run: |
+          cd services/${{ matrix.service }}
+          mypy . --ignore-missing-imports --no-strict-optional
+          # --ignore-missing-imports: don't fail on untyped third-party libs (aio_pika etc)
+          # This catches: wrong return types, missing fields, invalid method calls
+        continue-on-error: true
+        # continue-on-error: mypy warnings don't fail the build yet
+        # Gradually increase strictness as you add more type hints
+
+  # ────────────────────────────────────────────────────────
+  # JOB 4: SQL — Validate migration syntax
+  # ────────────────────────────────────────────────────────
+  sql-validate:
+    name: SQL Syntax Check
+    runs-on: ubuntu-latest
+    services:
+      # GitHub Actions can spin up Docker services (!!!)
+      # This gives you a real PostgreSQL to test against
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pokemontool_user
+          POSTGRES_PASSWORD: pokemontool_pass
+          POSTGRES_DB: pokemontool
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          # options: waits until postgres is ready before running steps
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run migrations
+        env:
+          PGPASSWORD: pokemontool_pass
+        run: |
+          psql -h localhost -U pokemontool_user -d pokemontool \
+            -f database/migrations/001_init.sql
+          # If SQL has a syntax error → this step fails → CI fails → PR blocked
+          echo "✓ Migration 001 applied successfully"
+
+      - name: Run seeds
+        env:
+          PGPASSWORD: pokemontool_pass
+        run: |
+          psql -h localhost -U pokemontool_user -d pokemontool \
+            -f database/seeds/pokemon_shows.sql
+          echo "✓ Seeds applied successfully"
+
+      - name: Verify table structure
+        env:
+          PGPASSWORD: pokemontool_pass
+        run: |
+          psql -h localhost -U pokemontool_user -d pokemontool -c "\dt"
+          # \dt = list all tables — verifies your schema was created correctly

@@ -47,7 +47,7 @@ type AlertStore interface {
 	Delete(ctx context.Context, id, userID string) error
 	Insert(ctx context.Context, alert models.Alert) (string, error) // returns new alert's UUID
 	GetWatchedAlerts(ctx context.Context, userID string) ([]models.Alert, error)
-	GetUnreadCount(ctx contetx.Context, userID string) (int, error)
+	GetUnreadCount(ctx context.Context, userID string) (int, error)
 }
 
 // postgresAlertStore implements AlertStore with PostgreSQL.
