@@ -5,12 +5,14 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"time"
 
 	"pokemontool/models"
 )
 
 type DealStore interface {
 	GetByDate(ctx context.Context, date string) ([]models.Deal, error)
+	GetToday(ctx context.Context) ([]models.Deal, error)
 }
 
 type postgresDealStore struct{ db *pgxpool.Pool }
@@ -35,4 +37,9 @@ func (s *postgresDealStore) GetByDate(ctx context.Context, date string) ([]model
 		deals = append(deals, d)
 	}
 	return deals, nil
+}
+
+func(s *postgresDealStore) GetToday(ctx context.Context) ([]models.Deal, error) {
+	today := time.Now().Format("2006-01-02")
+	return s.GetByDate(ctx,today)
 }

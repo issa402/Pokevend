@@ -179,6 +179,28 @@ class CardRepo:
                 )
             conn.commit()
 
+
+    def insert_price_point(self, card_id, marketplace, price):
+        column = "price_ebay" if marketplace.lower() == "ebay" else "price_tgcplayer"
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                sql = f"""
+                    INSER INTO price_history (card_id, date, {column}, avg_prcie)
+                    VALUES(%s, CURRENT_DATE, %s, %s)
+                    ON CONFLICT (card_id, date)
+                    DO UPDATE SET
+                        {column} = EXCLUDED.{column},
+                        avg_price = (
+                            COALESCE(price_history.price_ebay, EXCLUDED.{column})+
+                            COALESCE(price_history.price_tcgplayer, EXCLUDED.{column})
+                        )/2
+                """
+
+                cur.execute(sql, (card_id, price, price))
+            conn.coomit()
+
+
 # ============================================================
 # TODO #1 (Practice): Switch to a connection pool using psycopg2.pool
 # Currently, each method call opens and closes a new connection.

@@ -7,24 +7,27 @@
 // The idea: ALL database queries for a domain (e.g. cards) live in ONE place.
 //
 // BEFORE Repository pattern: SQL scattered everywhere
-//   handlers/cards.go       → has SQL
-//   services/card_service.go → also has SQL
-//   worker/notification.go  → also has SQL
+//
+//	handlers/cards.go       → has SQL
+//	services/card_service.go → also has SQL
+//	worker/notification.go  → also has SQL
 //
 // AFTER Repository pattern: SQL in ONE place
-//   store/card_store.go     → ALL card SQL is here and ONLY here
-//   handlers, services, worker → call the INTERFACE, never write SQL
+//
+//	store/card_store.go     → ALL card SQL is here and ONLY here
+//	handlers, services, worker → call the INTERFACE, never write SQL
 //
 // WHY THIS IS FAANG STANDARD:
-//   1. Want to switch from PostgreSQL to DynamoDB? Change the store, nothing else.
-//   2. Want to add query caching? Add it in the store, once.
-//   3. Want to test your service? Mock the interface — no real DB needed.
+//  1. Want to switch from PostgreSQL to DynamoDB? Change the store, nothing else.
+//  2. Want to add query caching? Add it in the store, once.
+//  3. Want to test your service? Mock the interface — no real DB needed.
 //
 // GO CONCEPT: Interface-based Repository
 //   - Define an interface (CardStore) with the methods you need
 //   - Write a concrete implementation (postgresCardStore)
 //   - Services accept the INTERFACE, not the concrete type
 //   - In tests, you can provide a testCardStore that returns fake data
+//
 // ============================================================
 package store
 
@@ -49,6 +52,7 @@ type CardStore interface {
 	GetTrending(ctx context.Context) (rising, falling []models.Card, err error)
 	GetPriceHistory(ctx context.Context, cardID string) ([]models.PricePoint, error)
 	GetByID(ctx context.Context, cardID string) (*models.Card, error)
+	UpdatePrice(ctx context.Context, name string, marketplace string, price float64) error
 }
 
 // postgresCardStore is the CONCRETE implementation using PostgreSQL.
@@ -97,6 +101,15 @@ func (s *postgresCardStore) GetTrending(ctx context.Context) ([]models.Card, []m
 	}
 	falling, err := s.queryByLabel(ctx, "FALLING", "trending_score ASC")
 	return rising, falling, err
+}
+
+func (s *postgresCardStore) UpdatePrice(ctx context.Context, name string, marketplace string, price float64) error {
+	query := fmt.Sprintf(
+		`UPDATE cards
+		SET price_%s = $1, last_updated = NOW()
+		WHERE name = $2`, marketplace)
+	_, err := s.db.Exec(ctx, query, price, name)
+	return err
 }
 
 // queryByLabel is a private helper — reduces duplication between rising/falling queries.

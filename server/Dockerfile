@@ -4,12 +4,13 @@
 # Result: ~15MB image vs ~200MB for Node.js
 # ============================================================
 
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 WORKDIR /app
 
 # Copy all source code and go.mod first
 COPY . .
 
+ENV GOTOOLCHAIN=auto
 # Run go mod tidy to generate go.sum and download deps
 RUN go mod tidy
 
@@ -26,6 +27,7 @@ RUN apk --no-cache add ca-certificates tzdata
 COPY --from=builder /app/server .
 
 # Non-root user
+
 RUN adduser -D -s /bin/sh appuser
 USER appuser
 

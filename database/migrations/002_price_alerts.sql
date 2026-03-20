@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS price_alerts_settings (
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, card_name, direction)
-)
+);
 --   price_alerts_settings table with:
 --     id UUID PK, user_id FK, card_name TEXT, threshold DECIMAL,
 --     direction TEXT ("BELOW"/"ABOVE"), is_active BOOL default true,
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS price_alerts_settings (
 --   1. idx_price_alerts_user ON (user_id)
 --   2. idx_price_alerts_active — PARTIAL INDEX on (user_id, is_active) WHERE is_active = true
 CREATE INDEX IF NOT EXISTS idx_price_alerts_active 
-    ON price_alerts_settings(card_name, is_actice)
+    ON price_alerts_settings(card_name, is_active)
     WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_alerts_user_unread 
     ON alerts(user_id, is_read)

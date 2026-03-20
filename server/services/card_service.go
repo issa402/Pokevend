@@ -7,13 +7,15 @@
 // Adds Redis caching on top of PostgreSQL queries.
 //
 // CACHING STRATEGY IMPLEMENTED HERE:
-//   Search results:   5-minute TTL  (users re-search, slight staleness OK)
-//   Trending cards:  30-minute TTL  (batch-computed, expensive to fetch)
+//
+//	Search results:   5-minute TTL  (users re-search, slight staleness OK)
+//	Trending cards:  30-minute TTL  (batch-computed, expensive to fetch)
 //
 // CACHE KEY FORMAT: "resource:qualifier"
-//   "search:charizard"   → search for "charizard"
-//   "trending:rising"    → top 10 rising cards
-//   "trending:falling"   → top 10 falling cards
+//
+//	"search:charizard"   → search for "charizard"
+//	"trending:rising"    → top 10 rising cards
+//	"trending:falling"   → top 10 falling cards
 //
 // WHY CACHE IN THE SERVICE, NOT THE STORE OR HANDLER?
 // Service: RIGHT LEVEL. Business rule: "trending cards can be 30 min stale."
@@ -22,15 +24,16 @@
 // The caching strategy is a BUSINESS DECISION → belongs in service.
 //
 // GO CONCEPTS:
-//   redis.Client.Get/Set, json.Marshal/Unmarshal, time.Duration,
-//   errors.Is(err, redis.Nil) to detect cache miss
+//
+//	redis.Client.Get/Set, json.Marshal/Unmarshal, time.Duration,
+//	errors.Is(err, redis.Nil) to detect cache miss
+//
 // ============================================================
 package services
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -41,8 +44,8 @@ import (
 
 // CardService handles card business logic with Redis caching.
 type CardService struct {
-	store store.CardStore   // PostgreSQL queries
-	cache *redis.Client     // Redis for caching
+	store store.CardStore // PostgreSQL queries
+	cache *redis.Client   // Redis for caching
 }
 
 // NewCardService is the constructor — injects store (DB) and cache (Redis).
@@ -117,6 +120,10 @@ func (s *CardService) GetTrending(ctx context.Context) (rising, falling []models
 // GetPriceHistory returns price history — no cache (chart data needs to be fresh).
 func (s *CardService) GetPriceHistory(ctx context.Context, cardID string) ([]models.PricePoint, error) {
 	return s.store.GetPriceHistory(ctx, cardID)
+}
+
+func (s *CardService) GetByID(ctx context.Context, id string) (*models.Card, error) {
+	return s.store.GetByID(ctx, id)
 }
 
 // InvalidateTrendingCache clears the trending cache.

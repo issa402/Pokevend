@@ -3,10 +3,11 @@
 // TYPE: Handler Layer — Alert HTTP Endpoints
 //
 // ROUTES SERVED:
-//   GET    /api/alerts            → list user's alerts (paginated)
-//   PUT    /api/alerts/read-all  → mark all read
-//   PUT    /api/alerts/{id}/read → mark one read
-//   DELETE /api/alerts/{id}      → delete one alert
+//
+//	GET    /api/alerts            → list user's alerts (paginated)
+//	PUT    /api/alerts/read-all  → mark all read
+//	PUT    /api/alerts/{id}/read → mark one read
+//	DELETE /api/alerts/{id}      → delete one alert
 //
 // SECURITY PATTERN: USER CONTEXT INJECTION
 // All endpoints here require authentication (under RequireAuth middleware).
@@ -16,7 +17,7 @@
 // WHY NOT PASS USER ID IN THE REQUEST BODY?
 // Client-side IDs are UNTRUSTED. A client could send userID="someone-elses-uuid".
 // The authenticated user ID comes from the JWT (server-signed) — cannot be forged.
-// FAANG RULE: User identity always comes from the server-side auth context, 
+// FAANG RULE: User identity always comes from the server-side auth context,
 // never from the request body or query params.
 // ============================================================
 package handlers
@@ -111,12 +112,14 @@ func (h *AlertHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // After completing Tasks 3 and 4, add this method to AlertHandler.
 func (h *AlertHandler) UnreadCount(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r)
-	if err := h.svc.UnreadCount(r.Context(), user.ID); err != nil {
+	count, err := h.svc.GetUnreadCount(r.Context(), user.ID)
+	if err != nil {
 		pkg.Error(w, http.StatusInternalServerError, "failed to retrive count")
-		return 
+		return
 	}
-	pkg.JSON(w, http.StatusOK map[string]int{"unread": count})
+	pkg.JSON(w, http.StatusOK, map[string]int{"unread": count})
 }
+
 // Signature:
 //   func (h *AlertHandler) UnreadCount(w http.ResponseWriter, r *http.Request)
 //

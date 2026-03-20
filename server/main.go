@@ -14,17 +14,20 @@
 // No global variables. No hidden dependencies.
 //
 // REQUEST FLOW (top to bottom):
-//   HTTP Request
-//     → chi Router (routes/routes.go)
-//     → Middleware (JWT auth, rate limit)
-//     → Handler (handlers/*_handler.go)  — parse HTTP
-//     → Service (services/*_service.go)  — business logic
-//     → Store (store/*_store.go)         — SQL queries
-//     → PostgreSQL / Redis
+//
+//	HTTP Request
+//	  → chi Router (routes/routes.go)
+//	  → Middleware (JWT auth, rate limit)
+//	  → Handler (handlers/*_handler.go)  — parse HTTP
+//	  → Service (services/*_service.go)  — business logic
+//	  → Store (store/*_store.go)         — SQL queries
+//	  → PostgreSQL / Redis
 //
 // GO CONCEPTS DEMONSTRATED:
-//   func main(), package imports, short variable declaration :=,
-//   defer, goroutines (go keyword), chi router, cors middleware
+//
+//	func main(), package imports, short variable declaration :=,
+//	defer, goroutines (go keyword), chi router, cors middleware
+//
 // ============================================================
 package main
 
@@ -92,40 +95,42 @@ func main() {
 	// Each store gets injected with the shared DB pool.
 	// db is a *pgxpool.Pool — it manages multiple concurrent DB connections.
 	// Passing the pool (not a connection) means stores share connections efficiently.
-	userStore      := store.NewUserStore(db)
-	cardStore      := store.NewCardStore(db)
-	alertStore     := store.NewAlertStore(db)
+	userStore := store.NewUserStore(db)
+	cardStore := store.NewCardStore(db)
+	alertStore := store.NewAlertStore(db)
+	priceAlertStore := store.NewPriceAlertStore(db)
 	watchlistStore := store.NewWatchlistStore(db)
 	inventoryStore := store.NewInventoryStore(db)
-	dealStore      := store.NewDealStore(db)
-	showStore      := store.NewShowStore(db)
+	dealStore := store.NewDealStore(db)
+	showStore := store.NewShowStore(db)
 
 	// ── LAYER 4: Services (Business Logic) ────────────────────
 	// Services receive INTERFACES (not concrete types).
 	// Example: authSvc receives UserStore interface, not *postgresUserStore.
 	// This means: in tests, you can pass a fake UserStore that returns mock data.
 	// Services know WHAT to do (business rules) but not HOW to store (that's stores).
-	authSvc      := services.NewAuthService(userStore, cfg.JWTSecret)
-	cardSvc      := services.NewCardService(cardStore, rdb)   // rdb = Redis for caching
-	alertSvc     := services.NewAlertService(alertStore)
+	authSvc := services.NewAuthService(userStore, cfg.JWTSecret)
+	cardSvc := services.NewCardService(cardStore, rdb) // rdb = Redis for caching
+	alertSvc := services.NewAlertService(alertStore)
 	watchlistSvc := services.NewWatchlistService(watchlistStore)
 	inventorySvc := services.NewInventoryService(inventoryStore)
-	dealSvc      := services.NewDealService(dealStore, rdb)
-	showSvc      := services.NewShowService(showStore, rdb)
+	dealSvc := services.NewDealService(dealStore, rdb)
+	showSvc := services.NewShowService(showStore, rdb)
 
 	// ── LAYER 5: Handlers (HTTP Layer) ────────────────────────
 	// Handlers receive SERVICE instances (not store instances).
 	// Handlers handle HTTP: parse request, call service, write response.
 	// They contain NO business logic and NO SQL.
-	sseManager   := handlers.NewSSEManager()           // SSE connection registry
-	authH        := handlers.NewAuthHandler(authSvc)
-	cardH        := handlers.NewCardHandler(cardSvc)
-	alertH       := handlers.NewAlertHandler(alertSvc)
-	watchlistH   := handlers.NewWatchlistHandler(watchlistSvc)
-	inventoryH   := handlers.NewInventoryHandler(inventorySvc)
-	dealH        := handlers.NewDealHandler(dealSvc)
-	showH        := handlers.NewShowHandler(showSvc)
-	apikeyH      := handlers.NewAPIKeyHandler(db, cfg) // apikey doesn't have a service yet
+	sseManager := handlers.NewSSEManager() // SSE connection registry
+	authH := handlers.NewAuthHandler(authSvc)
+	cardH := handlers.NewCardHandler(cardSvc)
+	alertH := handlers.NewAlertHandler(alertSvc)
+	priceAlertH := handlers.NewPriceAlertHandler(priceAlertStore)
+	watchlistH := handlers.NewWatchlistHandler(watchlistSvc)
+	inventoryH := handlers.NewInventoryHandler(inventorySvc)
+	dealH := handlers.NewDealHandler(dealSvc)
+	showH := handlers.NewShowHandler(showSvc)
+	apikeyH := handlers.NewAPIKeyHandler(db, cfg) // apikey doesn't have a service yet
 
 	// ── LAYER 6: Background Worker ────────────────────────────
 	// The notification worker runs as a goroutine — independent of HTTP.
@@ -141,8 +146,8 @@ func main() {
 	r := chi.NewRouter()
 
 	// Built-in chi middleware:
-	r.Use(chimiddleware.Logger)              // log every request: method, path, status, duration
-	r.Use(chimiddleware.Recoverer)           // catch panics, return 500 instead of crashing server
+	r.Use(chimiddleware.Logger)                    // log every request: method, path, status, duration
+	r.Use(chimiddleware.Recoverer)                 // catch panics, return 500 instead of crashing server
 	r.Use(chimiddleware.Timeout(30 * time.Second)) // cancel requests that take too long
 
 	// CORS (Cross-Origin Resource Sharing):
@@ -163,7 +168,7 @@ func main() {
 	// ── LAYER 8: Route Registration ───────────────────────────
 	// All URL → handler mappings live in routes/routes.go (single source of truth).
 	// We pass all handler instances to routes.Register so it can wire them.
-	routes.Register(r, cfg, sseManager, authH, cardH, alertH, watchlistH, inventoryH, dealH, showH, apikeyH)
+	routes.Register(r, cfg, sseManager, authH, cardH, alertH, priceAlertH, watchlistH, inventoryH, dealH, showH, apikeyH)
 
 	// ── Start Server ──────────────────────────────────────────
 	// http.ListenAndServe blocks forever, serving requests.

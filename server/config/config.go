@@ -24,6 +24,9 @@ package config
 
 import (
 	"os"
+	"errors"
+	"fmt"
+	"strconv"
 )
 
 // Config holds all application configuration.
@@ -113,13 +116,13 @@ func getEnv(key, defaultVal string) string {
 // Call cfg.Validate() in main.go and log.Fatalf if it returns an error.
 // HINT: strings.HasPrefix, strconv.Atoi for port validation
 func(c *Config) Validate() error {
-	port, err = strconv.Atoi(c.Port)
+	port, err := strconv.Atoi(c.Port)
 	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("Invalid Port: %s( must be 1- 65535)", c.Port)
 	}
 	if c.Env == "production" {
-		if c.JWTSececret == "change-me-in-production" {
-			return errors.New("security risk: Encryption-key")
+		if c.JWTSecret == "change-me-in-production" {
+			return errors.New("security risk: EJWT Key")
 		}
 	}
 	return nil

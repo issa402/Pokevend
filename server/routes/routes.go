@@ -20,11 +20,13 @@
 //   - NO logic of any kind
 //
 // CHI ROUTER CONCEPTS:
-//   r.Get / r.Post / r.Put / r.Delete = HTTP method + URL → handler
-//   r.Route("/api", ...) = group routes under /api prefix
-//   r.Group(func(r) {...}) = sub-router with extra middleware
-//   r.Use(middleware)      = middleware applies to all routes in this group
-//   {id} = URL parameter   = accessible via chi.URLParam(r, "id")
+//
+//	r.Get / r.Post / r.Put / r.Delete = HTTP method + URL → handler
+//	r.Route("/api", ...) = group routes under /api prefix
+//	r.Group(func(r) {...}) = sub-router with extra middleware
+//	r.Use(middleware)      = middleware applies to all routes in this group
+//	{id} = URL parameter   = accessible via chi.URLParam(r, "id")
+//
 // ============================================================
 package routes
 
@@ -48,6 +50,7 @@ func Register(
 	auth *handlers.AuthHandler,
 	cards *handlers.CardHandler,
 	alerts *handlers.AlertHandler,
+	priceAlerts *handlers.PriceAlertHandler,
 	watchlist *handlers.WatchlistHandler,
 	inventory *handlers.InventoryHandler,
 	deals *handlers.DealHandler,
@@ -73,7 +76,7 @@ func Register(
 		// POST /api/auth/register — create new account
 		// POST /api/auth/login    — get JWT with credentials
 		r.Post("/auth/register", auth.Register)
-		r.Post("/auth/login",    auth.Login)
+		r.Post("/auth/login", auth.Login)
 
 		// ── SSE Stream ─────────────────────────────────────────────
 		// GET /api/stream?token=<jwt>
@@ -95,9 +98,10 @@ func Register(
 			// GET /api/cards/search?q=charizard&limit=20
 			// GET /api/cards/trending
 			// GET /api/cards/{id}/history
-			r.Get("/cards/search",      cards.Search)
-			r.Get("/cards/trending",    cards.Trending)
+			r.Get("/cards/search", cards.Search)
+			r.Get("/cards/trending", cards.Trending)
 			r.Get("/cards/{id}/history", cards.PriceHistory)
+			r.Get("/cards/{id}", cards.Detail)
 			// {id} = URL parameter. In the handler: chi.URLParam(r, "id")
 
 			// ── Alerts ────────────────────────────────────
@@ -105,19 +109,23 @@ func Register(
 			// PUT    /api/alerts/read-all        mark everything read
 			// PUT    /api/alerts/{id}/read       mark one alert read
 			// DELETE /api/alerts/{id}            delete one alert
-			r.Get("/alerts",             alerts.List)
-			r.Get("/alerts/unread-count",alerts.UnreadCount)
-			r.Put("/alerts/read-all",    alerts.MarkAllRead)
-			r.Put("/alerts/{id}/read",   alerts.MarkRead)
-			r.Delete("/alerts/{id}",     alerts.Delete)
+			r.Get("/alerts", alerts.List)
+			r.Get("/alerts/unread-count", alerts.UnreadCount)
+			r.Put("/alerts/read-all", alerts.MarkAllRead)
+			r.Put("/alerts/{id}/read", alerts.MarkRead)
+			r.Delete("/alerts/{id}", alerts.Delete)
 
+			//________________PRICE_ALERTS_________
+			r.Get("/price-alerts", priceAlerts.List)
+			r.Post("/price-alerts", priceAlerts.Create)
+			r.Delete("/price-alerts/{id}", priceAlerts.Delete)
 			// ── Watchlist ─────────────────────────────────
 			// GET    /api/watchlist       list watched cards
 			// POST   /api/watchlist       add a card to watchlist
 			// DELETE /api/watchlist/{id}  remove from watchlist
-			r.Get("/watchlist",          watchlist.List)
-			r.Post("/watchlist",         watchlist.Add)
-			r.Delete("/watchlist/{id}",  watchlist.Remove)
+			r.Get("/watchlist", watchlist.List)
+			r.Post("/watchlist", watchlist.Add)
+			r.Delete("/watchlist/{id}", watchlist.Remove)
 
 			// ── Inventory ─────────────────────────────────
 			// GET    /api/inventory            list owned cards
@@ -125,26 +133,26 @@ func Register(
 			// DELETE /api/inventory/{id}       remove from collection
 			// POST   /api/inventory/import     upload CSV file
 			// GET    /api/inventory/export     download CSV
-			r.Get("/inventory",          inventory.List)
-			r.Post("/inventory",         inventory.Add)
-			r.Delete("/inventory/{id}",  inventory.Delete)
-			r.Post("/inventory/import",  inventory.Import)
-			r.Get("/inventory/export",   inventory.Export)
+			r.Get("/inventory", inventory.List)
+			r.Post("/inventory", inventory.Add)
+			r.Delete("/inventory/{id}", inventory.Delete)
+			r.Post("/inventory/import", inventory.Import)
+			r.Get("/inventory/export", inventory.Export)
 
 			// ── Deals ─────────────────────────────────────
 			// GET /api/deals/today  today's best-value cards
-			r.Get("/deals/today",        deals.Today)
+			r.Get("/deals/today", deals.Today)
 
 			// ── Shows ─────────────────────────────────────
 			// GET /api/shows/upcoming  upcoming TCG events near the user
-			r.Get("/shows/upcoming",     shows.Upcoming)
+			r.Get("/shows/upcoming", shows.Upcoming)
 
 			// ── API Keys ──────────────────────────────────
 			// GET    /api/apikeys               list stored platforms
 			// POST   /api/apikeys               save/update encrypted key
 			// DELETE /api/apikeys/{platform}    remove key for a platform
-			r.Get("/apikeys",             apikeys.List)
-			r.Post("/apikeys",            apikeys.Save)
+			r.Get("/apikeys", apikeys.List)
+			r.Post("/apikeys", apikeys.Save)
 			r.Delete("/apikeys/{platform}", apikeys.Delete)
 		})
 	})
@@ -160,7 +168,7 @@ func Register(
 // TODO #1 (Practice): Add API versioning
 // FAANG APIs are versioned — POST /api/v1/auth/login vs /api/v2/auth/login.
 // This lets you release breaking changes without breaking existing clients.
-// Refactor: move routes under r.Route("/api/v1", ...) 
+// Refactor: move routes under r.Route("/api/v1", ...)
 // Then add r.Route("/api/v2", ...) when you add new response formats.
 // Clients using v1 continue working while you build v2.
 

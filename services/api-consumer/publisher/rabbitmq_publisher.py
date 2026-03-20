@@ -132,29 +132,37 @@ class RabbitMQPublisher:
 # ============================================================
     async def publish_batch(self, queue_name: str, messages: List[Dict[str, Any]]) -> int:
         if not self._channel:
-            logger.wanrning("Publisher not connectec")
+            logger.warning("Publisher not connected") # Fixed typo
             return 0
-        queue = await self._channel.declar_queue(queue_name, durable = True)
+            
+        # Fixed typo: declare_queue
+        queue = await self._channel.declare_queue(queue_name, durable=True)
         count = 0
-        for msg in messages:
+        
+        for msg in messages: # msg is the variable name here
             try:
-            # 2. Create the envelope
-            message = aio_pika.Message(
-                body=json.dumps(msg_data).encode("utf-8"),
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            )
-            # 3. Drop it in the mailbox
-            await self._channel.default_exchange.publish(
-                message, 
-                routing_key=queue_name
-            )
-            count += 1
-        except Exception as e:
-            logger.error(f"Failed to publish message in batch: {e}")
+                # Ensure the 'marketplace' key exists before sending to Go
+                if "marketplace" not in msg:
+                    msg["marketplace"] = "unknown"
 
-    # 4. Log the result AFTER the loop is finished
-    logger.info(f"✅ Successfully batched {count}/{len(messages)} messages to {queue_name}")
-    return count
+                # 2. Create the envelope
+                message = aio_pika.Message(
+                    body=json.dumps(msg).encode("utf-8"), # Fixed: use 'msg'
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                )
+                
+                # 3. Drop it in the mailbox
+                await self._channel.default_exchange.publish(
+                    message, 
+                    routing_key=queue_name
+                )
+                count += 1
+            except Exception as e:
+                logger.error(f"Failed to publish message in batch: {e}")
+
+        # 4. Log the result
+        logger.info(f"✅ Successfully batched {count}/{len(messages)} messages to {queue_name}")
+        return count
 # Signature:
 #   async def publish_batch(self, queue_name: str, messages: List[Dict[str, Any]]) -> int:
 #

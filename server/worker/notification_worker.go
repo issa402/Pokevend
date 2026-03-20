@@ -8,10 +8,11 @@
 // its own event loop, processing messages from a queue.
 //
 // THIS WORKER'S PIPELINE:
-//   [RabbitMQ] → consume listing message
-//   [Store]    → check which users are watching that card
-//   [Store]    → insert alert in PostgreSQL for matching users
-//   [SSE]      → push real-time notification to browser
+//
+//	[RabbitMQ] → consume listing message
+//	[Store]    → check which users are watching that card
+//	[Store]    → insert alert in PostgreSQL for matching users
+//	[SSE]      → push real-time notification to browser
 //
 // FAANG PATTERN: Event-Driven Architecture
 // Python and Go are completely decoupled via RabbitMQ.
@@ -23,8 +24,10 @@
 //   - You can scale Python and Go independently
 //
 // GO CONCEPTS:
-//   goroutines, channels, amqp091-go, Ack/Nack message handling,
-//   concurrent processing with go keyword, struct tags
+//
+//	goroutines, channels, amqp091-go, Ack/Nack message handling,
+//	concurrent processing with go keyword, struct tags
+//
 // ============================================================
 package worker
 
@@ -35,8 +38,8 @@ import (
 	"log"
 	"time"
 
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/jackc/pgx/v5/pgxpool"
+	amqp "github.com/rabbitmq/amqp091-go"
 
 	"pokemontool/handlers"
 	"pokemontool/models"
@@ -99,9 +102,9 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 
 	// Instantiate store dependencies here — worker directly uses stores, not services.
 	// (Worker is infrastructure-level, not HTTP-level, so it bypasses service layer here)
-	wlStore    := store.NewWatchlistStore(db)
 	alertStore := store.NewAlertStore(db)
 	priceStore := store.NewPriceAlertStore(db)
+	cardStore := store.NewCardStore(db)
 
 	log.Println("[worker] Listening for listings on RabbitMQ...")
 
@@ -119,21 +122,24 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 		// Process each listing in a goroutine so we don't block the receive loop.
 		// If processListing takes 500ms, we can still receive the next message immediately.
 		// GO PATTERN: "fire and forget" goroutine per message (for non-critical processing)
-		go processListing(listing, wlStore, alertStore, priceStore, mgr)
+		go processListing(listing, alertStore, priceStore, cardStore, mgr)
 		msg.Ack(false) // Ack = tell RabbitMQ we received and processed it (remove from queue)
 	}
 }
 
 // processListing matches an incoming listing against all watchlists.
 // Runs in a goroutine — concurrent with other listings being processed.
-func processListing(listing Listing, alerts store.AlertStore, price store.PriceAlertStore, mgr *handlers.SSEManager) {
+func processListing(listing Listing, alerts store.AlertStore, price store.PriceAlertStore, card store.CardStore, mgr *handlers.SSEManager) {
 	ctx := context.Background()
 
+	if err := card.UpdatePrice(ctx, listing.CardName, listing.Marketplace, listing.Price); err != nil {
+		log.Printf("[worker] failed to update price : %v", err)
+	}
 	// 1. Get the snipers for this specific card
 	activeSettings, err := price.GetActiveAlertsForCard(ctx, listing.CardName)
 	if err != nil {
 		log.Printf("[worker] price settings: %v", err)
-		return 
+		return
 	}
 
 	// START THE LOOP
@@ -153,7 +159,7 @@ func processListing(listing Listing, alerts store.AlertStore, price store.PriceA
 		}
 
 		if alertType == "" {
-			continue 
+			continue
 		}
 
 		// 3. Persist Alert (INSIDE THE LOOP)
@@ -186,9 +192,6 @@ func processListing(listing Listing, alerts store.AlertStore, price store.PriceA
 		mgr.SendToUser(setting.UserID, string(payload)) // Fixed: use setting.UserID
 	} // <--- This bracket ends the loop
 } // <--- This bracket ends the function
-
-
-
 
 // TODO #1 (Practice): Add retry logic for failed DB inserts
 // If alerts.Insert() fails (e.g., DB briefly unavailable), the alert is lost.

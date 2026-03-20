@@ -1,31 +1,32 @@
 package handlers
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	"pokemontool/middleware"
 	"pokemontool/pkg"
-	"pokemontool/services"
+	"pokemontool/store"
 )
 
-type PriceAlertStore struct{
+type PriceAlertHandler struct {
 	repo store.PriceAlertStore
 }
 
 func NewPriceAlertHandler(repo store.PriceAlertStore) *PriceAlertHandler {
-	return &PriceAlertHandler{repo:repo}
+	return &PriceAlertHandler{repo: repo}
 }
 
 func (h *PriceAlertHandler) Create(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r)
-	
-	var input struct{
-		CardName string `json:"cardName`
+
+	var input struct {
+		CardName  string  `json:"cardName"`
 		Threshold float64 `json:"threshold"`
-		Direction string `json:"direction"`
+		Direction string  `json:"direction"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -48,12 +49,10 @@ func (h *PriceAlertHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// 4. Success Response
 	pkg.JSON(w, http.StatusCreated, map[string]string{"status": "alert created"})
 }
-	
-
 
 func (h *PriceAlertHandler) List(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r)
-	
+
 	alerts, err := h.repo.ListByUser(r.Context(), user.ID)
 	if err != nil {
 		pkg.Error(w, http.StatusInternalServerError, "db error")

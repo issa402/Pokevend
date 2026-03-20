@@ -13,7 +13,7 @@ type DealHandler struct{ svc *services.DealService }
 func NewDealHandler(svc *services.DealService) *DealHandler { return &DealHandler{svc: svc} }
 
 func (h *DealHandler) Today(w http.ResponseWriter, r *http.Request) {
-	deals, _, err := h.svc.GetToday(r.Context())
+	deals, err := h.svc.GetToday(r.Context())
 	if err != nil {
 		pkg.Error(w, http.StatusInternalServerError, err.Error())
 		return
