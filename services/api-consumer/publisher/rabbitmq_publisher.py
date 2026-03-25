@@ -30,7 +30,7 @@
 # ============================================================
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import aio_pika
 
@@ -130,7 +130,7 @@ class RabbitMQPublisher:
 # PRACTICE TASK #7 — Add publish_batch to RabbitMQPublisher
 # See: practice_tasks.md → Task 7
 # ============================================================
-    async def publish_batch(self, queue_name: str, messages: List[Dict[str, Any]]) -> int:
+    async def publish_batch(self, queue_name: str, messages: list[Dict[str, Any]]) -> int:
         if not self._channel:
             logger.warning("Publisher not connected") # Fixed typo
             return 0

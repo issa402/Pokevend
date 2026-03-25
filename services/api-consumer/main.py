@@ -26,9 +26,11 @@
 import asyncio
 import logging
 import os
+import httpx
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+
+from fastapi import FastAPI, Response, status
 from dotenv import load_dotenv
 
 # Local package imports — each is a separate directory in this service
@@ -139,29 +141,34 @@ async def scanner_loop():
     # Time between full scan cycles — configurable via environment variable
     interval = int(os.getenv("SCRAPING_INTERVAL_MINUTES", "30")) * 60  # convert to seconds
 
+    GO_INTERNAL_URL = "http://localhost:3001/api/internal/watchlist-names"
     # The cards we actively monitor for price changes
     # In production: fetch these from PostgreSQL watchlists table instead
-    WATCH_LIST = [
-        "Charizard Base Set", "Pikachu Illustrator", "Blastoise Base Set",
-        "Mewtwo Base Set", "Umbreon Gold Star", "Rayquaza Gold Star",
-        "Lugia Neo Genesis", "Charizard VMAX", "Pikachu VMAX Rainbow",
-    ]
 
-    while True:  # infinite loop — this is intentional for a background worker
-        for card in WATCH_LIST:
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(GO_INTERNAL_URL)
+                resp.raise_for_status()
+                watch_list = resp.json()
+            logger.info(f"Watchlist successgully retrieved {len(watch_list)} cards to scan")
+
+        except Exception as e:
+            logger.error(f"Failed to sync watchlist {e}")
+            watch_list = []
+
+        for card in watch_list:
             try:
-                # await = suspend here until scan_card finishes (I/O bound — API call)
-                await ebay_svc.scan_card(card)
-                await tcg_svc.scan_card(card)
+                await ebay_svc.scan(card)
+                await tcg_svc.scan(card)
+
             except Exception as e:
-                # Log but NEVER crash the loop — one bad card shouldn't stop scanning all cards
-                logger.error(f"Scanner error for '{card}': {e}")
-            # Polite delay between cards — don't hammer the APIs
-            await asyncio.sleep(1)  # 1 second between cards
+                logger.error(f"No apis for '{card}' : {e}")
 
-        logger.info(f"Scan complete. Sleeping {interval}s until next cycle...")
-        await asyncio.sleep(interval)  # wait before the next full cycle
-
+            await asyncio.sleep(1)
+    logger.info(f"✅ Scan cycle complete. Sleeping {interval}s...")
+    await asyncio.sleep(interval)
+    
 
 # Entry point when running directly: python main.py
 # In Docker: CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
@@ -180,6 +187,22 @@ if __name__ == "__main__":
 # and replace WATCH_LIST with a database query result.
 # Update the scan every cycle so new watchlist additions are picked up.
 # HINT: Create a WatchlistRepo in repositories/watchlist_repo.py
+
+@app.get("/health")
+async def health(response: Response):
+    is_rabbitmq_ok = publisher is not None and publisher._channel is not None
+    result = {
+        "status" : "ok" if is_rabbitmq_ok else "unhealthy",
+        "service" : "api-consumer",
+        "rabbitmq" : "connected" if is_rabbitmq_ok else "not connected"
+    }
+
+    if not is_rabbitmq_ok:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return result
+    return result
+
+
 
 # TODO #2 (Practice): Add /health endpoint to FastAPI
 # Add: @app.get("/health")

@@ -121,6 +121,7 @@ func main() {
 	// Handlers receive SERVICE instances (not store instances).
 	// Handlers handle HTTP: parse request, call service, write response.
 	// They contain NO business logic and NO SQL.
+	healthH := handlers.NewHealthHandler(db, rdb)
 	sseManager := handlers.NewSSEManager() // SSE connection registry
 	authH := handlers.NewAuthHandler(authSvc)
 	cardH := handlers.NewCardHandler(cardSvc)
@@ -168,7 +169,7 @@ func main() {
 	// ── LAYER 8: Route Registration ───────────────────────────
 	// All URL → handler mappings live in routes/routes.go (single source of truth).
 	// We pass all handler instances to routes.Register so it can wire them.
-	routes.Register(r, cfg, sseManager, authH, cardH, alertH, priceAlertH, watchlistH, inventoryH, dealH, showH, apikeyH)
+	routes.Register(r, cfg, sseManager, authH, cardH, alertH, priceAlertH, watchlistH, inventoryH, dealH, showH, apikeyH, healthH)
 
 	// ── Start Server ──────────────────────────────────────────
 	// http.ListenAndServe blocks forever, serving requests.

@@ -56,16 +56,15 @@ func Register(
 	deals *handlers.DealHandler,
 	shows *handlers.ShowHandler,
 	apikeys *handlers.APIKeyHandler,
+	health *handlers.HealthHandler,
 ) {
 	// ── Health Check ─────────────────────────────────────────────
 	// GET /health — NOT under /api, not authenticated.
 	// Used by Docker, AWS load balancers, and monitoring tools to verify
 	// the server is alive. Returns immediately with no DB query.
 	// At FAANG, this endpoint is called every 30 seconds by health checks.
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","service":"pokemontool-go"}`))
-	})
+
+	r.Get("/health", health.Check)
 
 	// ── API Routes ───────────────────────────────────────────────
 	// All API routes live under /api prefix.
@@ -78,6 +77,7 @@ func Register(
 		r.Post("/auth/register", auth.Register)
 		r.Post("/auth/login", auth.Login)
 
+		r.Get("/internal/watchlist-names", watchlist.GetWatchedNames)
 		// ── SSE Stream ─────────────────────────────────────────────
 		// GET /api/stream?token=<jwt>
 		// WHY token in URL (not header)?

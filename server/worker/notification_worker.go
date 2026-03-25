@@ -105,6 +105,7 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 	alertStore := store.NewAlertStore(db)
 	priceStore := store.NewPriceAlertStore(db)
 	cardStore := store.NewCardStore(db)
+	watchStore := store.NewWatchlistStore(db)
 
 	log.Println("[worker] Listening for listings on RabbitMQ...")
 
@@ -122,76 +123,93 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 		// Process each listing in a goroutine so we don't block the receive loop.
 		// If processListing takes 500ms, we can still receive the next message immediately.
 		// GO PATTERN: "fire and forget" goroutine per message (for non-critical processing)
-		go processListing(listing, alertStore, priceStore, cardStore, mgr)
+		go processListing(listing, alertStore, priceStore, cardStore, watchStore, mgr)
 		msg.Ack(false) // Ack = tell RabbitMQ we received and processed it (remove from queue)
 	}
 }
 
 // processListing matches an incoming listing against all watchlists.
 // Runs in a goroutine — concurrent with other listings being processed.
-func processListing(listing Listing, alerts store.AlertStore, price store.PriceAlertStore, card store.CardStore, mgr *handlers.SSEManager) {
+func processListing(listing Listing, alerts store.AlertStore, price store.PriceAlertStore, card store.CardStore, watch store.WatchlistStore, mgr *handlers.SSEManager) {
 	ctx := context.Background()
 
+	// Always update the general price cache first
 	if err := card.UpdatePrice(ctx, listing.CardName, listing.Marketplace, listing.Price); err != nil {
 		log.Printf("[worker] failed to update price : %v", err)
 	}
-	// 1. Get the snipers for this specific card
+
+	// ── CHECK 1: GLOBAL PRICE ALERTS ───────────────────────────
 	activeSettings, err := price.GetActiveAlertsForCard(ctx, listing.CardName)
+	if err == nil {
+		for _, setting := range activeSettings {
+			var alertType, message string
+
+			if setting.Direction == "BELOW" && listing.Price <= setting.Threshold {
+				alertType = "PRICE_DROP"
+				message = fmt.Sprintf("🔥 %s dropped to $%.2f on %s (Target: $%.2f)",
+					listing.CardName, listing.Price, listing.Marketplace, setting.Threshold)
+			} else if setting.Direction == "ABOVE" && listing.Price >= setting.Threshold {
+				alertType = "PRICE_SPIKE"
+				message = fmt.Sprintf("📈 %s hit $%.2f on %s (Target: $%.2f)",
+					listing.CardName, listing.Price, listing.Marketplace, setting.Threshold)
+			}
+
+			if alertType != "" {
+				sendAlert(ctx, setting.UserID, alertType, message, listing, alerts, mgr)
+			}
+		}
+	}
+
+	// ── CHECK 2: PERSONAL WATCHLIST SNIPES ─────────────────────
+	candidates, err := watch.GetAlertCandidates(ctx, listing.CardName, listing.Price)
+	if err == nil {
+		for _, person := range candidates {
+			// Safety check: only alert if target price exists
+			target := 0.0
+			if person.TargetBuyPrice != nil {
+				target = *person.TargetBuyPrice
+			}
+
+			message := fmt.Sprintf("🎯 Watchlist Hit: %s is $%.2f (Your Target: $%.2f)",
+				listing.CardName, listing.Price, target)
+
+			sendAlert(ctx, person.UserID, "WATCHLIST_HIT", message, listing, alerts, mgr)
+		}
+	}
+}
+
+// Helper function to avoid repeating the Alert + SSE logic twice
+func sendAlert(ctx context.Context, userID string, aType string, msg string, l Listing, store store.AlertStore, mgr *handlers.SSEManager) {
+	alert := models.Alert{
+		UserID:      userID,
+		CardName:    &l.CardName,
+		AlertType:   aType,
+		Message:     msg,
+		Marketplace: &l.Marketplace,
+		Price:       &l.Price,
+		ListingURL:  &l.ListingURL,
+	}
+
+	alertID, err := store.Insert(ctx, alert)
 	if err != nil {
-		log.Printf("[worker] price settings: %v", err)
+		log.Printf("[worker] alert insert error: %v", err)
 		return
 	}
 
-	// START THE LOOP
-	for _, setting := range activeSettings {
-		var alertType, message string
+	payload, _ := json.Marshal(map[string]interface{}{
+		"type":        aType,
+		"id":          alertID,
+		"cardName":    l.CardName,
+		"message":     msg,
+		"price":       l.Price,
+		"marketplace": l.Marketplace,
+		"listingUrl":  l.ListingURL,
+		"timestamp":   time.Now().Format(time.RFC3339),
+	})
+	mgr.SendToUser(userID, string(payload))
+}
 
-		// 2. The Math Logic
-		if setting.Direction == "BELOW" && listing.Price <= setting.Threshold {
-			alertType = "PRICE_DROP"
-			message = fmt.Sprintf("🔥 %s dropped to $%.2f on %s (Target: $%.2f)",
-				listing.CardName, listing.Price, listing.Marketplace, setting.Threshold)
-
-		} else if setting.Direction == "ABOVE" && listing.Price >= setting.Threshold {
-			alertType = "PRICE_SPIKE"
-			message = fmt.Sprintf("📈 %s hit $%.2f on %s (Target: $%.2f)",
-				listing.CardName, listing.Price, listing.Marketplace, setting.Threshold)
-		}
-
-		if alertType == "" {
-			continue
-		}
-
-		// 3. Persist Alert (INSIDE THE LOOP)
-		alert := models.Alert{
-			UserID:      setting.UserID, // Corrected!
-			CardName:    &listing.CardName,
-			AlertType:   alertType,
-			Message:     message,
-			Marketplace: &listing.Marketplace,
-			Price:       &listing.Price,
-			ListingURL:  &listing.ListingURL,
-		}
-		alertID, err := alerts.Insert(ctx, alert)
-		if err != nil {
-			log.Printf("[worker] alert insert: %v", err)
-			continue
-		}
-
-		// 4. Push via SSE (INSIDE THE LOOP)
-		payload, _ := json.Marshal(map[string]interface{}{
-			"type":        alertType,
-			"id":          alertID,
-			"cardName":    listing.CardName,
-			"message":     message,
-			"price":       listing.Price,
-			"marketplace": listing.Marketplace,
-			"listingUrl":  listing.ListingURL,
-			"timestamp":   time.Now().Format(time.RFC3339),
-		})
-		mgr.SendToUser(setting.UserID, string(payload)) // Fixed: use setting.UserID
-	} // <--- This bracket ends the loop
-} // <--- This bracket ends the function
+// <--- This bracket ends the function
 
 // TODO #1 (Practice): Add retry logic for failed DB inserts
 // If alerts.Insert() fails (e.g., DB briefly unavailable), the alert is lost.

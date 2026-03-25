@@ -36,19 +36,51 @@ set -euo pipefail
 #
 # 5. Print final "✅ All services healthy" or exit 1
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
-check_endpoint() {
-    local name ="$1"
-    local url -"$2"
-    local expected = "$3"
-    status = $(curl -s -o /dev/null -w "%{http_code}" "url")
-    if [[ "$status" == "$expected" ]]; then 
-        echo -e "${RED}✗${NC} $name is dead!"
-        exit 1
-    fi
 
+check_endpoint() {
+    # No spaces around the = sign!
+    local name="$1"
+    local url="$2"
+    local expected="$3"
+    
+    # Run curl. -s = silent, -o /dev/null = ignore body, -w = write only status code
+    # We use double quotes around "$url" so Bash doesn't get confused by symbols
+    status=$(curl -s -o /dev/null -w "%{http_code}" "$url" || echo "000")
+
+    if [[ "$status" == "$expected" ]]; then 
+        echo -e "${GREEN}✓${NC} $name → HTTP $status"
+    else 
+        echo -e "${RED}✗${NC} $name → HTTP $status (Expected $expected)"
+        exit 1 # Kill the script immediately if one thing is broken
+    fi
 }
-check_endpoint() "GO API" "http://localhost:3000/health" 200
-check_endpoint() "FastAPI" "http://localhost:8001/docs" 200
+
+# ── RUNNING THE CHECKS ──
+# (Make sure your Go and Python servers are running before typing this!)
+
+# Call the function (No parentheses like Go/Python!)
+check_endpoint "Go API" "http://localhost:3001/health" 200
+check_endpoint "FastAPI" "http://localhost:8001/health" 200
+
+# PostgreSQL: We tell Docker to run 'pg_isready' inside the container
+echo -n "Checking Postgres... "
+if docker exec pokemontool_postgres pg_isready -U pokemontool_user > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Ready${NC}"
+else
+    echo -e "${RED}✗ Down${NC}"
+    exit 1
+fi
+
+# Redis: We send a 'PING' and expect a 'PONG'
+echo -n "Checking Redis... "
+if docker exec pokemontool_redis redis-cli ping | grep -q PONG; then
+    echo -e "${GREEN}✓ Ready${NC}"
+else
+    echo -e "${RED}✗ Down${NC}"
+    exit 1
+fi
+
+echo -e "\n${GREEN}✅ ALL SERVICES HEALTHY${NC}"
 # TODO: Write your implementation below (delete this comment)
 
 

@@ -31,11 +31,20 @@ func (s *WatchlistService) Add(ctx context.Context, userID, cardName, setName st
 		TargetBuyPrice:  buyPrice,
 		TargetSellPrice: sellPrice,
 	}
-	if setName != "" { item.SetName = &setName }
-	if notes != "" { item.Notes = &notes }
+	if setName != "" {
+		item.SetName = &setName
+	}
+	if notes != "" {
+		item.Notes = &notes
+	}
 	return s.wl.Insert(ctx, item)
 }
 
 func (s *WatchlistService) Remove(ctx context.Context, itemID, userID string) error {
 	return s.wl.Delete(ctx, itemID, userID)
+}
+
+func (s *WatchlistService) GetDistinctCardNames(ctx context.Context) ([]string, error) {
+	return s.wl.GetDistinctCardNames(ctx)
+
 }
