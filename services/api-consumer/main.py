@@ -145,29 +145,34 @@ async def scanner_loop():
     # The cards we actively monitor for price changes
     # In production: fetch these from PostgreSQL watchlists table instead
 
-    while True:
+    while True: # Everything MUST be inside this loop
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(GO_INTERNAL_URL)
                 resp.raise_for_status()
-                watch_list = resp.json()
-            logger.info(f"Watchlist successgully retrieved {len(watch_list)} cards to scan")
+                # Use .get('values', []) logic or 'or []' to prevent NoneType errors
+                watch_list = resp.json() 
+                if watch_list is None:
+                    watch_list = []
+                    
+            logger.info(f"Watchlist successfully retrieved {len(watch_list)} cards to scan")
+
+            # Move the scanning inside the TRY so it only runs if fetch succeeded
+            for card in watch_list:
+                try:
+                    await ebay_svc.scan_card(card) # Fixed method name to scan_card
+                    await tcg_svc.scan_card(card)
+                except Exception as e:
+                    logger.error(f"No apis for '{card}' : {e}")
+                await asyncio.sleep(1)
 
         except Exception as e:
-            logger.error(f"Failed to sync watchlist {e}")
-            watch_list = []
+            logger.error(f"Failed to sync watchlist: {e}")
+            await asyncio.sleep(10) # Emergency sleep so it doesn't spam on error
 
-        for card in watch_list:
-            try:
-                await ebay_svc.scan(card)
-                await tcg_svc.scan(card)
-
-            except Exception as e:
-                logger.error(f"No apis for '{card}' : {e}")
-
-            await asyncio.sleep(1)
-    logger.info(f"✅ Scan cycle complete. Sleeping {interval}s...")
-    await asyncio.sleep(interval)
+        # CRITICAL: This MUST be indented inside the 'while True' loop
+        logger.info(f"✅ Scan cycle complete. Sleeping {interval}s...")
+        await asyncio.sleep(interval)
     
 
 # Entry point when running directly: python main.py

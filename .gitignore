@@ -87,3 +87,6 @@ desktop.ini
 # --- Playwright ---
 playwright-report/
 test-results/
+
+secrets.txt
+secerets.txt

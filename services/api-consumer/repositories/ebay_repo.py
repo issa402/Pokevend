@@ -27,6 +27,7 @@
 #   httpx.AsyncClient (async HTTP), Optional type hints,
 #   _token (private attribute by convention), basic auth
 # ============================================================
+
 import os
 import httpx
 from typing import Any, Dict, Optional
@@ -34,14 +35,14 @@ from typing import Any, Dict, Optional
 
 class EbayRepo:
     """
-    Encapsulates all raw eBay API HTTP calls.
+    #Encapsulates all raw eBay API HTTP calls.
     
-    PYTHON CONVENTION: Leading underscore (_token) = private (not enforced, just convention)
-    In Go, lowercase = private (enforced by compiler)
-    In Python, underscore prefix = "please don't use this from outside the class"
+    #PYTHON CONVENTION: Leading underscore (_token) = private (not enforced, just convention)
+    #In Go, lowercase = private (enforced by compiler)
+    #In Python, underscore prefix = "please don't use this from outside the class"
     
-    Manages OAuth token caching: fetches once, reuses until it expires.
-    (Production improvement: check token expiry and refresh proactively)
+    #Manages OAuth token caching: fetches once, reuses until it expires.
+    #(Production improvement: check token expiry and refresh proactively)
     """
 
     # Class-level constants: UPPER_SNAKE_CASE = constants in Python
@@ -63,14 +64,14 @@ class EbayRepo:
 
     async def get_token(self) -> str:
         """
-        Fetch an OAuth2 access token from eBay using client credentials flow.
+        #Fetch an OAuth2 access token from eBay using client credentials flow.
         
-        OAUTH2 CLIENT CREDENTIALS FLOW:
-        Used for server-to-server authentication (no user involved).
-        Send client_id + client_secret → get access_token (valid for ~2 hours).
+        #OAUTH2 CLIENT CREDENTIALS FLOW:
+        #Used for server-to-server authentication (no user involved).
+        #Send client_id + client_secret → get access_token (valid for ~2 hours).
         
-        Token caching: we reuse self._token if already fetched.
-        In production: check token expiry (eBay returns "expires_in" seconds).
+        #Token caching: we reuse self._token if already fetched.
+        #In production: check token expiry (eBay returns "expires_in" seconds).
         """
         if self._token:  # simple cache — reuse existing token
             return self._token
@@ -98,15 +99,15 @@ class EbayRepo:
 
     async def search_listings(self, card_name: str, limit: int = 50) -> Dict[str, Any]:
         """
-        Search eBay's Browse API for Pokémon card listings by name.
-        Returns raw eBay API response (dict with "itemSummaries" array).
+        #Search eBay's Browse API for Pokémon card listings by name.
+        #Returns raw eBay API response (dict with "itemSummaries" array).
         
-        categoryIds:{183454} = Pokémon category on eBay
-        (filters out non-card items with similar names)
+        #categoryIds:{183454} = Pokémon category on eBay
+        #(filters out non-card items with similar names)
         
-        PYTHON TYPING: Dict[str, Any]
-        Dict = dictionary, str = string keys, Any = any value type
-        eBay's response has nested structure we can't fully type without Pydantic
+        #PYTHON TYPING: Dict[str, Any]
+        #Dict = dictionary, str = string keys, Any = any value type
+        #eBay's response has nested structure we can't fully type without Pydantic
         """
         token = await self.get_token()
 
@@ -117,9 +118,9 @@ class EbayRepo:
                 headers={"Authorization": f"Bearer {token}"},
                 # params= = URL query parameters (?q=...&limit=...&filter=...)
                 params={
-                    "q": f"Pokemon card {card_name}",
+                    "q": f"{card_name} pokemon card", # Slightly better keyword order
                     "limit": limit,
-                    "filter": "categoryIds:{183454}",
+                    "filter": "categoryIds:{183454},buyingOptions:{FIXED_PRICE}", 
                 },
             )
             resp.raise_for_status()

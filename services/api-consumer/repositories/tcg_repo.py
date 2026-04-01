@@ -20,90 +20,144 @@
 # ONLY raw API calls live here. No Pydantic models. No publishing.
 # Returns raw dicts that the service layer interprets.
 # ============================================================
-import os
-import httpx
-from typing import Any, Dict, Optional
+
+import logging 
+from typing import Optional, Dict, Any
+from tcgdexsdk import TCGdex, Query 
+import re
+logger = logging.getLogger(__name__)
+
 
 
 class TCGRepo:
-    """
-    Encapsulates all raw TCGplayer API HTTP calls.
-    
-    Note the TWO-STEP lookup:
-      1. Search by name → get productId
-      2. Fetch price by productId → get marketPrice
-    This is because TCGplayer requires a product ID for pricing.
-    EbayRepo does it in one step (eBay's Browse API accepts text search directly).
-    """
-
-    BASE_URL = "https://api.tcgplayer.com"
-
     def __init__(self):
-        self.public_key  = os.getenv("TCGPLAYER_PUBLIC_KEY", "")
-        self.private_key = os.getenv("TCGPLAYER_PRIVATE_KEY", "")
-        # Both keys are required — TCGplayer's OAuth2 uses a two-key system
-        self._token: Optional[str] = None
-
-    async def get_token(self) -> str:
-        """
-        OAuth2 client credentials flow for TCGplayer.
-        Same pattern as ebay_repo.get_token() — different endpoint and params.
-        
-        TOKEN CACHING: simple in-memory cache (same trade-off as eBay).
-        TCGplayer tokens are valid for 60 days — much longer than eBay's 2 hours.
-        In production: store token in Redis with proper expiry tracking.
-        """
-        if self._token:
-            return self._token
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self.BASE_URL}/token",
-                # TCGplayer uses form-encoded body (not JSON) for token requests
-                data={
-                    "grant_type":    "client_credentials",
-                    "client_id":     self.public_key,
-                    "client_secret": self.private_key,
-                },
-            )
-            resp.raise_for_status()
-            self._token = resp.json()["access_token"]
-
-        return self._token
+        self.client = TCGdex("en")
 
     async def get_market_price(self, card_name: str) -> Dict[str, Any]:
-        """
-        Get the current market price for a card by name.
-        Two-step process: search by name → get productId → fetch price.
-        Returns raw TCGplayer pricing response dict.
-        """
-        token = await self.get_token()
-        headers = {"Authorization": f"Bearer {token}"}
+        try:
+            # 1. UNIVERSAL CLEANER: Strip numbers and extra tags so TCGdex can find the base card
+            # 'Charizard ex 199' -> 'Charizard'
+            clean_name = re.sub(r'[^a-zA-Z\s]', '', card_name).split()[0]
 
-        async with httpx.AsyncClient() as client:
-            # Step 1: Search for the product by name to get its ID
-            search_resp = await client.get(
-                f"{self.BASE_URL}/v1.37.0/catalog/products",
-                headers=headers,
-                params={
-                    "productName": card_name,
-                    "categoryId": 3,   # categoryId 3 = Pokémon on TCGplayer
-                    "limit": 1,
-                },
-            )
-            search_resp.raise_for_status()
-            products = search_resp.json().get("results", [])
-            if not products:
-                return {"results": []}  # no product found — return empty
+            # 2. Search using the cleaned name
+            search_results = await self.client.card.list(Query().equal("name", clean_name))
+            
+            if not search_results or len(search_results) == 0:
+                logger.warning(f"TCGdex: No cards found for '{clean_name}'")
+                return {"results": []}
 
-            # Step 2: Fetch pricing for the found product
-            product_id = products[0]["productId"]
-            price_resp = await client.get(
-                f"{self.BASE_URL}/v1.37.0/pricing/product/{product_id}",
-                headers=headers,
-            )
-            price_resp.raise_for_status()
-            return price_resp.json()
+            # 3. PICK THE FIRST ITEM [0] FROM THE LIST
+            card_id = search_results[0].id
+            
+            # 4. Fetch the FULL card details
+            full_card = await self.client.card.get(card_id)
+            
+            market_price = 0.0
+        
+            # 5. Extract price: pricing -> tcgplayer -> variant -> marketPrice
+            if hasattr(full_card, 'pricing') and full_card.pricing:
+                tp = full_card.pricing.tcgplayer
+                if tp:
+                    # We loop through possible variant names to find a price
+                    for variant in ['normal', 'holofoil', 'reverse', 'firstEdition']:
+                        v_data = getattr(tp, variant, None)
+                        if v_data:
+                            # marketPrice is the specific field from the TCGdex schema
+                            market_price = getattr(v_data, 'marketPrice', 0.0)
+                            if market_price > 0:
+                                break
+
+            if market_price > 0:
+                return {
+                    "results": [{
+                        "marketPrice": float(market_price),
+                        "productId": full_card.localId
+                    }]
+                }
+            
+            return {"results": []}
+        except Exception as e:
+            logger.error(f"TCGdex Repo Error for {card_name}: {e}")
+            return {"results": []}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# ARCHIVED REPO: Legacy TCGplayer (Commented Out)
+# ============================================================
+# class LegacyTCGRepo:
+#     BASE_URL = "https://api.tcgplayer.com"
+#
+#     def __init__(self):
+#         self.public_key  = os.getenv("TCGPLAYER_PUBLIC_KEY", "")
+#         self.private_key = os.getenv("TCGPLAYER_PRIVATE_KEY", "")
+#         self._token: Optional[str] = None
+#
+#     async def get_token(self) -> str:
+#         if self._token:
+#             return self._token
+#         async with httpx.AsyncClient() as client:
+#             resp = await client.post(
+#                 f"{self.BASE_URL}/token",
+#                 data={
+#                     "grant_type": "client_credentials",
+#                     "client_id": self.public_key,
+#                     "client_secret": self.private_key,
+#                 },
+#             )
+#             resp.raise_for_status()
+#             self._token = resp.json()["access_token"]
+#         return self._token
+#
+#     async def get_market_price(self, card_name: str) -> Dict[str, Any]:
+#         token = await self.get_token()
+#         headers = {"Authorization": f"Bearer {token}"}
+#         async with httpx.AsyncClient() as client:
+#             search_resp = await client.get(
+#                 f"{self.BASE_URL}/v1.37.0/catalog/products",
+#                 headers=headers,
+#                 params={"productName": card_name, "categoryId": 3, "limit": 1},
+#             )
+#             search_resp.raise_for_status()
+#             products = search_resp.json().get("results", [])
+#             if not products: return {"results": []}
+#             product_id = products[0]["productId"]
+#             price_resp = await client.get(
+#                 f"{self.BASE_URL}/v1.37.0/pricing/product/{product_id}",
+#                 headers=headers,
+#             )
+#             price_resp.raise_for_status()
+#             return price_resp.json()
 
 # ============================================================
 # TODO #1 (Practice): Add batch pricing

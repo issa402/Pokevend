@@ -96,17 +96,17 @@ func (s *postgresWatchlistStore) GetAlertCandidates(ctx context.Context, cardNam
 
 func (s *postgresWatchlistStore) GetDistinctCardNames(ctx context.Context) ([]string, error) {
 	// SELECT DISTINCT ensures if 50 users watch "Pikachu", we only scan it ONCE.
+	names := []string{}
 	rows, err := s.db.Query(ctx, "SELECT DISTINCT card_name FROM watchlists")
 	if err != nil {
-		return nil, err
+		return names, err
 	}
 	defer rows.Close()
 
-	var names []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, err
+			return names, err
 		}
 		names = append(names, name)
 	}

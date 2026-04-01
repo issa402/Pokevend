@@ -113,8 +113,10 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 	// The loop blocks when there are no messages (efficient — no busy waiting).
 	// It exits only if the RabbitMQ connection closes.
 	for msg := range msgs {
+		log.Printf("[worker] Recieved message from RabbitMq: %s", string(msg.Body))
 		var listing Listing
 		if err := json.Unmarshal(msg.Body, &listing); err != nil {
+			log.Printf("[worker] JSON Unmarshall Error: %v", err)
 			// json.Unmarshal = deserialize JSON bytes into Go struct
 			// If JSON is malformed, Nack (rejected) and don't requeue (it's unprocessable)
 			msg.Nack(false, false) // Nack = negative acknowledgement
@@ -123,6 +125,7 @@ func StartNotificationWorker(conn *amqp.Connection, db *pgxpool.Pool, mgr *handl
 		// Process each listing in a goroutine so we don't block the receive loop.
 		// If processListing takes 500ms, we can still receive the next message immediately.
 		// GO PATTERN: "fire and forget" goroutine per message (for non-critical processing)
+		log.Printf("[worker] Processing Listing: %s at $%.2f", listing.CardName, listing.Price)
 		go processListing(listing, alertStore, priceStore, cardStore, watchStore, mgr)
 		msg.Ack(false) // Ack = tell RabbitMQ we received and processed it (remove from queue)
 	}

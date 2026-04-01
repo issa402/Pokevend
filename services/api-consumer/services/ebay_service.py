@@ -69,9 +69,19 @@ class EbayService:
             # Catch ALL exceptions from the repo — network errors, auth failures, etc.
             # Return empty list (don't crash the scanner loop for one card)
             logger.error(f"eBay search failed for '{card_name}': {e}")
-            return []
+            raw = {"itemSummaries": []}
 
         listings: List[CardListing] = []
+
+
+        test_listing = CardListing(
+            card_name=card_name, 
+            price =45.00,
+            marketplace="ebay",
+            listing_url="http://test-snipe.com",
+            scraped_at=datetime.utcnow(),
+        )
+        listings.append(test_listing)
 
         # Iterate over eBay API response "itemSummaries" array
         for item in raw.get("itemSummaries", []):
@@ -98,9 +108,10 @@ class EbayService:
             )
             listings.append(listing)
         if listings:
-            payloads = [l.model_dump(mode = "json") for l in listings]
-            await self.publisher.publish("listings", payloads)
-            logger.info(f"eBay: published {len(listings)} listings for '{card_name}'")
+            for l in listings:
+                payload = l.model_dump(mode = "json") 
+                await self.publisher.publish("listings", payload)
+        logger.info(f"eBay: published {len(listings)} listings for '{card_name}'")
 
             # Publish to RabbitMQ — Go's notification_worker.go consumes this
             # model_dump(mode="json") = serialize Pydantic model to JSON-compatible dict

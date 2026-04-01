@@ -18,15 +18,19 @@
 // cfg := config.Load() is explicit — you can see exactly where config comes from.
 //
 // GO CONCEPTS:
-//   os.Getenv(), struct definition, getEnv helper function
+//
+//	os.Getenv(), struct definition, getEnv helper function
+//
 // ============================================================
 package config
 
 import (
-	"os"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds all application configuration.
@@ -64,6 +68,7 @@ type Config struct {
 // Environment variables come from: .env file (dev) or EC2 environment (prod)
 
 func Load() *Config {
+	_ = godotenv.Load("../.env")
 	return &Config{
 		// getEnv(key, default) — if KEY is not set, use the default
 		// This means the server works with zero config in development
@@ -113,9 +118,10 @@ func getEnv(key, defaultVal string) string {
 //   - JWT_SECRET is still the default "change-me-in-production" in production
 //   - ENCRYPTION_KEY is all zeros in production
 //   - PORT is not a valid port number (1-65535)
+//
 // Call cfg.Validate() in main.go and log.Fatalf if it returns an error.
 // HINT: strings.HasPrefix, strconv.Atoi for port validation
-func(c *Config) Validate() error {
+func (c *Config) Validate() error {
 	port, err := strconv.Atoi(c.Port)
 	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("Invalid Port: %s( must be 1- 65535)", c.Port)
@@ -127,6 +133,7 @@ func(c *Config) Validate() error {
 	}
 	return nil
 }
+
 // TODO #2 (Practice): Add configuration for feature flags
 // Feature flags let you enable/disable features without redeployment.
 // Add fields like: EnableRateLimit bool, EnableSSE bool, MaxSearchResults int

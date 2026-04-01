@@ -2,6 +2,7 @@
 # FILE: services/api-consumer/services/tcg_service.py
 # TYPE: Service Layer — TCGplayer Business Logic
 #
+#REPLACING WITH OPEN SOURCE TCG ORIGINAL IS COMMENTED OUT IN THE BOTTOM
 # WHAT IS THIS?
 # Service for fetching and publishing TCGplayer card price data.
 # Mirrors EbayService but for TCGplayer's API.
@@ -22,68 +23,101 @@
 #   Auth: OAuth2 Bearer Token (same flow as eBay)
 #   Rate limit: 300 requests/minute (be careful — log/throttle)
 # ============================================================
+
 import logging
 from typing import List
 from datetime import datetime
+from tcgdexsdk import TCGdex, Query
 
 from models.schemas import CardListing
 from publisher.rabbitmq_publisher import RabbitMQPublisher
-from repositories.tcg_repo import TCGRepo
+from repositories.tcg_repo import TCGRepo 
 
 logger = logging.getLogger(__name__)
 
-
 class TCGService:
-    """
-    Mirror of EbayService for TCGplayer.
-    Same pattern: repo → service → publisher.
-    Dependency injected in main.py — never instantiates repo internally.
-    """
-
-    def __init__(self, repo: TCGRepo, publisher: RabbitMQPublisher):
+    def __init__(self, repo : TCGRepo, publisher: RabbitMQPublisher):
         self.repo = repo
-        self.publisher = publisher
+        self.publisher = publisher 
 
-    async def scan_card(self, card_name: str) -> List[CardListing]:
-        """
-        Fetch TCGplayer market price for a card and publish to RabbitMQ.
-        
-        TCGplayer returns a "market price" (the average of recent sales).
-        This is authoritative — used as the benchmark for deal detection.
-        
-        KEY DIFFERENCE from eBay service:
-        eBay returns individual listings (many at various prices).
-        TCGplayer returns the MARKET PRICE (one authoritative price).
-        We still publish it as a CardListing but treat it as the "true" price.
-        """
+    async def scan_card(self, card_name:str) -> List[CardListing]:
         try:
             data = await self.repo.get_market_price(card_name)
         except Exception as e:
-            logger.error(f"TCGplayer lookup failed for '{card_name}': {e}")
+            logger.error(f"Tcg Player Not working: {e}")
             return []
 
         listings: List[CardListing] = []
 
-        # TCGplayer response: {"results": [{"marketPrice": 450.00, "productId": 12345}]}
         for result in data.get("results", []):
             price = float(result.get("marketPrice") or 0)
             if price <= 0:
-                continue
-
+                continue 
+            
             listing = CardListing(
-                card_name=card_name,
-                price=price,
+                card_name= card_name,
+                price=price, 
                 marketplace="tcgplayer",
-                # TCGplayer product URL format for direct linking
-                listing_url=f"https://www.tcgplayer.com/product/{result.get('productId', '')}",
+                listing_url= f"https://tcgplayer.com{result.get('productId', '')}",
                 scraped_at=datetime.utcnow(),
             )
             listings.append(listing)
+
             await self.publisher.publish("listings", listing.model_dump(mode="json"))
 
-        logger.info(f"TCGplayer: published {len(listings)} prices for '{card_name}'")
-        return listings
+            logger.info(f"TCGdex:Published {len(listing)} price for '{card_name}'")
+            return listings
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# ARCHIVED SERVICE: Original Logic (Commented Out)
+# ============================================================
+# class LegacyTCGService:
+#     def __init__(self, repo: TCGRepo, publisher: RabbitMQPublisher):
+#         self.repo = repo
+#         self.publisher = publisher
+#
+#     async def scan_card(self, card_name: str) -> List[CardListing]:
+#         try:
+#             data = await self.repo.get_market_price(card_name)
+#         except Exception as e:
+#             logger.error(f"TCGplayer lookup failed for '{card_name}': {e}")
+#             return []
+#
+#         listings: List[CardListing] = []
+#         for result in data.get("results", []):
+#             price = float(result.get("marketPrice") or 0)
+#             if price <= 0: continue
+#             listing = CardListing(
+#                 card_name=card_name,
+#                 price=price,
+#                 marketplace="tcgplayer",
+#                 listing_url=f"https://www.tcgplayer.com/product/{result.get('productId', '')}",
+#                 scraped_at=datetime.utcnow(),
+#             )
+#             listings.append(listing)
+#             await self.publisher.publish("listings", listing.model_dump(mode="json"))
+#         return listings
 # ============================================================
 # TODO #1 (Practice): Add condition-based pricing
 # TCGplayer has SEPARATE prices for NM, LP, HP conditions.
