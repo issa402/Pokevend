@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
     # ── STARTUP (runs before accepting any HTTP requests) ─────────
     rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672")
     publisher = RabbitMQPublisher(rabbitmq_url)
+    
     try:
         await publisher.connect()
         logger.info("✓ RabbitMQ publisher connected")
