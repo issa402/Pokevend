@@ -40,7 +40,7 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env")) #gets me to the .env
 
 # ANSI color codes for terminal output
 # These escape codes tell the terminal to change text color
@@ -66,6 +66,7 @@ def get_db_connection() -> psycopg2.extensions.connection:
     except Exception as e:
         print(f"{RED}✗ Cannot connect to database: {e}{NC}")
         sys.exit(1)
+
 
 
 def get_table_counts(conn) -> list:
