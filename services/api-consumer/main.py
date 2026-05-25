@@ -30,7 +30,7 @@ import httpx
 from contextlib import asynccontextmanager
 
 
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, Query, Response, status
 from dotenv import load_dotenv
 
 # Local package imports — each is a separate directory in this service
@@ -60,6 +60,12 @@ logger = logging.getLogger(__name__)
 publisher: RabbitMQPublisher = None
 ebay_svc: EbayService = None
 tcg_svc: TCGService = None
+
+MAJOR_SLAB_TIERS = [
+    "PSA_10", "PSA_9", "PSA_8", "PSA_7",
+    "CGC_10", "CGC_9_5", "CGC_9",
+    "BGS_10", "BGS_9_5", "BGS_9",
+]
 
 
 @asynccontextmanager
@@ -142,7 +148,13 @@ async def scanner_loop():
     # Time between full scan cycles — configurable via environment variable
     interval = int(os.getenv("SCRAPING_INTERVAL_MINUTES", "30")) * 60  # convert to seconds
 
-    GO_INTERNAL_URL = "http://localhost:3001/api/internal/watchlist-names"
+    # Docker mode: use the Compose service name "server".
+    # Local host-run mode: change GO_INTERNAL_URL in .env to
+    # http://localhost:3001/api/internal/watchlist-names
+    GO_INTERNAL_URL = os.getenv(
+        "GO_INTERNAL_URL",
+        "http://server:3001/api/internal/watchlist-targets",
+    )
     # The cards we actively monitor for price changes
     # In production: fetch these from PostgreSQL watchlists table instead
 
@@ -159,9 +171,46 @@ async def scanner_loop():
             logger.info(f"Watchlist successfully retrieved {len(watch_list)} cards to scan")
 
             # Move the scanning inside the TRY so it only runs if fetch succeeded
-            for card in watch_list:
+            for target in watch_list:
+                if isinstance(target, dict):
+                    card = target.get("cardName") or target.get("card_name")
+                    external_card_id = target.get("externalCardId") or target.get("external_card_id")
+                    set_name = target.get("setName") or target.get("set_name")
+                    asset_type = target.get("assetType") or target.get("asset_type") or "RAW"
+                    slab_tier = target.get("slabTier") or target.get("slab_tier")
+                    language_preference = target.get("languagePreference") or target.get("language_preference") or "BOTH"
+                else:
+                    card = target
+                    external_card_id = None
+                    set_name = None
+                    asset_type = "RAW"
+                    slab_tier = None
+                    language_preference = "BOTH"
+                if not card:
+                    continue
                 try:
-                    await ebay_svc.scan_card(card) # Fixed method name to scan_card
+                    if asset_type == "ALL_SLABS":
+                        for tier in MAJOR_SLAB_TIERS:
+                            await ebay_svc.scan_card(
+                                card,
+                                external_card_id=external_card_id,
+                                set_name=set_name,
+                                asset_type="SLAB",
+                                slab_tier=tier,
+                                language_preference=language_preference,
+                                max_pages=1,
+                            )
+                            await asyncio.sleep(1)
+                    else:
+                        await ebay_svc.scan_card(
+                            card,
+                            external_card_id=external_card_id,
+                            set_name=set_name,
+                            asset_type=asset_type,
+                            slab_tier=slab_tier,
+                            language_preference=language_preference,
+                            max_pages=1,
+                        ) # Fixed method name to scan_card
                     await tcg_svc.scan_card(card)
                 except Exception as e:
                     logger.error(f"No apis for '{card}' : {e}")
@@ -169,7 +218,8 @@ async def scanner_loop():
 
         except Exception as e:
             logger.error(f"Failed to sync watchlist: {e}")
-            await asyncio.sleep(10) # Emergency sleep so it doesn't spam on error
+            await asyncio.sleep(10) # Retry quickly after startup/DNS races.
+            continue
 
         # CRITICAL: This MUST be indented inside the 'while True' loop
         logger.info(f"✅ Scan cycle complete. Sleeping {interval}s...")
@@ -207,6 +257,33 @@ async def health(response: Response):
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return result
     return result
+
+
+@app.get("/ebay/search")
+async def ebay_search(
+    cardName: str = Query(..., min_length=1),
+    externalCardId: str | None = None,
+    setName: str | None = None,
+    assetType: str = "RAW",
+    slabTier: str | None = None,
+    languagePreference: str = "BOTH",
+    pages: int = 2,
+    publish: bool = False,
+):
+    listings = await ebay_svc.scan_card(
+        cardName,
+        external_card_id=externalCardId,
+        set_name=setName,
+        asset_type=assetType,
+        slab_tier=slabTier,
+        publish=publish,
+        language_preference=languagePreference,
+        max_pages=pages,
+    )
+    return {
+        "count": len(listings),
+        "listings": [listing.model_dump(mode="json") for listing in listings],
+    }
 
 
 

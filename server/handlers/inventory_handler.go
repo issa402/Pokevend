@@ -34,13 +34,19 @@ func (h *InventoryHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *InventoryHandler) Add(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r)
 	var body struct {
-		CardName      string   `json:"cardName"`
-		SetName       string   `json:"setName"`
-		CardNumber    string   `json:"cardNumber"`
-		Condition     string   `json:"condition"`
-		Quantity      int      `json:"quantity"`
-		PurchasePrice *float64 `json:"purchasePrice"`
-		Notes         string   `json:"notes"`
+		CardName        string   `json:"cardName"`
+		SetName         string   `json:"setName"`
+		CardNumber      string   `json:"cardNumber"`
+		ExternalCardID  string   `json:"externalCardId"`
+		Rarity          string   `json:"rarity"`
+		ImageURL        string   `json:"imageUrl"`
+		MarketUpdatedAt string   `json:"marketUpdatedAt"`
+		PriceSource     string   `json:"priceSource"`
+		Condition       string   `json:"condition"`
+		Quantity        int      `json:"quantity"`
+		PurchasePrice   *float64 `json:"purchasePrice"`
+		CurrentValue    *float64 `json:"currentValue"`
+		Notes           string   `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CardName == "" {
 		pkg.Error(w, http.StatusBadRequest, "cardName is required")
@@ -48,12 +54,35 @@ func (h *InventoryHandler) Add(w http.ResponseWriter, r *http.Request) {
 	}
 	item := models.InventoryItem{
 		UserID: user.ID, CardName: body.CardName, Quantity: body.Quantity,
-		PurchasePrice: body.PurchasePrice,
+		PurchasePrice: body.PurchasePrice, CurrentValue: body.CurrentValue,
 	}
-	if body.SetName != "" { item.SetName = &body.SetName }
-	if body.CardNumber != "" { item.CardNumber = &body.CardNumber }
-	if body.Condition != "" { item.Condition = &body.Condition }
-	if body.Notes != "" { item.Notes = &body.Notes }
+	if body.SetName != "" {
+		item.SetName = &body.SetName
+	}
+	if body.CardNumber != "" {
+		item.CardNumber = &body.CardNumber
+	}
+	if body.ExternalCardID != "" {
+		item.ExternalCardID = &body.ExternalCardID
+	}
+	if body.Rarity != "" {
+		item.Rarity = &body.Rarity
+	}
+	if body.ImageURL != "" {
+		item.ImageURL = &body.ImageURL
+	}
+	if body.MarketUpdatedAt != "" {
+		item.MarketUpdatedAt = &body.MarketUpdatedAt
+	}
+	if body.PriceSource != "" {
+		item.PriceSource = &body.PriceSource
+	}
+	if body.Condition != "" {
+		item.Condition = &body.Condition
+	}
+	if body.Notes != "" {
+		item.Notes = &body.Notes
+	}
 
 	id, err := h.svc.Add(r.Context(), item)
 	if err != nil {
@@ -103,8 +132,15 @@ func (h *InventoryHandler) Export(w http.ResponseWriter, r *http.Request) {
 	cw.Flush()
 }
 
-func strPtrVal(s *string) string { if s == nil { return "" }; return *s }
+func strPtrVal(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
 func floatPtrStr(f *float64) string {
-	if f == nil { return "" }
+	if f == nil {
+		return ""
+	}
 	return fmt.Sprintf("%.2f", *f)
 }

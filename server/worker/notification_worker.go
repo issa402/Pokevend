@@ -53,10 +53,21 @@ import (
 // json tags use snake_case to match Python's convention (Python uses snake_case,
 // Go uses camelCase — the JSON tags bridge this difference).
 type Listing struct {
-	CardName    string  `json:"card_name"`
-	Price       float64 `json:"price"`
-	Marketplace string  `json:"marketplace"` // "ebay", "tcgplayer", "facebook", "mercari"
-	ListingURL  string  `json:"listing_url"` // direct link to the listing
+	CardName           string  `json:"card_name"`
+	ExternalCardID     string  `json:"external_card_id"`
+	Price              float64 `json:"price"`
+	Marketplace        string  `json:"marketplace"` // "ebay", "tcgplayer", "facebook", "mercari"
+	ListingURL         string  `json:"listing_url"` // direct link to the listing
+	ListingID          string  `json:"listing_id"`
+	ListingTitle       string  `json:"listing_title"`
+	ImageURL           string  `json:"image_url"`
+	Condition          string  `json:"condition"`
+	SetName            string  `json:"set_name"`
+	IsSlab             bool    `json:"is_slab"`
+	SlabTier           string  `json:"slab_tier"`
+	Grader             string  `json:"grader"`
+	Grade              string  `json:"grade"`
+	LanguagePreference string  `json:"language_preference"`
 }
 
 // StartNotificationWorker starts the RabbitMQ consumer loop.
@@ -140,6 +151,25 @@ func processListing(listing Listing, alerts store.AlertStore, price store.PriceA
 	if err := card.UpdatePrice(ctx, listing.CardName, listing.Marketplace, listing.Price); err != nil {
 		log.Printf("[worker] failed to update price : %v", err)
 	}
+	if err := card.UpsertListingSnapshot(ctx, models.ListingSnapshot{
+		CardName:           listing.CardName,
+		ExternalCardID:     stringPtr(listing.ExternalCardID),
+		Marketplace:        listing.Marketplace,
+		Price:              listing.Price,
+		ListingURL:         stringPtr(listing.ListingURL),
+		ListingTitle:       stringPtr(listing.ListingTitle),
+		ImageURL:           stringPtr(listing.ImageURL),
+		Condition:          stringPtr(listing.Condition),
+		ListingID:          stringPtr(listing.ListingID),
+		SetName:            stringPtr(listing.SetName),
+		IsSlab:             listing.IsSlab,
+		Grader:             stringPtr(listing.Grader),
+		Grade:              stringPtr(listing.Grade),
+		SlabTier:           listing.SlabTier,
+		LanguagePreference: listing.LanguagePreference,
+	}); err != nil {
+		log.Printf("[worker] failed to upsert listing snapshot: %v", err)
+	}
 
 	// ── CHECK 1: GLOBAL PRICE ALERTS ───────────────────────────
 	activeSettings, err := price.GetActiveAlertsForCard(ctx, listing.CardName)
@@ -164,7 +194,19 @@ func processListing(listing Listing, alerts store.AlertStore, price store.PriceA
 	}
 
 	// ── CHECK 2: PERSONAL WATCHLIST SNIPES ─────────────────────
-	candidates, err := watch.GetAlertCandidates(ctx, listing.CardName, listing.Price)
+	var externalCardID *string
+	if listing.ExternalCardID != "" {
+		externalCardID = &listing.ExternalCardID
+	}
+	assetType := "RAW"
+	var slabTier *string
+	if listing.IsSlab {
+		assetType = "SLAB"
+		if listing.SlabTier != "" {
+			slabTier = &listing.SlabTier
+		}
+	}
+	candidates, err := watch.GetAlertCandidates(ctx, listing.CardName, externalCardID, assetType, slabTier, listing.Price)
 	if err == nil {
 		for _, person := range candidates {
 			// Safety check: only alert if target price exists
@@ -191,6 +233,7 @@ func sendAlert(ctx context.Context, userID string, aType string, msg string, l L
 		Marketplace: &l.Marketplace,
 		Price:       &l.Price,
 		ListingURL:  &l.ListingURL,
+		ListingID:   stringPtr(l.ListingID),
 	}
 
 	alertID, err := store.Insert(ctx, alert)
@@ -207,9 +250,17 @@ func sendAlert(ctx context.Context, userID string, aType string, msg string, l L
 		"price":       l.Price,
 		"marketplace": l.Marketplace,
 		"listingUrl":  l.ListingURL,
+		"listingId":   l.ListingID,
 		"timestamp":   time.Now().Format(time.RFC3339),
 	})
 	mgr.SendToUser(userID, string(payload))
+}
+
+func stringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 // <--- This bracket ends the function

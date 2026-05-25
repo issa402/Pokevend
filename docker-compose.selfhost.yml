@@ -1,0 +1,21 @@
+# Self-host override for trusted LAN/VPN testing.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d
+#
+# Public shape:
+#   - client is reachable from LAN/VPN on port 5173
+#   - server is reachable only from this host on 127.0.0.1:3001
+#   - database/cache/queue ports remain localhost-only from docker-compose.yml
+#
+# The client container proxies /api requests to http://server:3001 over Docker's
+# private compose network, so outside users do not need direct access to the API.
+
+services:
+  client:
+    ports: !override
+      - "0.0.0.0:5173:80"
+
+  server:
+    ports: !override
+      - "127.0.0.1:${PORT:-3001}:3001"

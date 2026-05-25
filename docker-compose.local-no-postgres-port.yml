@@ -1,0 +1,5 @@
+services:
+  postgres:
+    ports: !reset []
+  scraping-service:
+    command: ["./main"]

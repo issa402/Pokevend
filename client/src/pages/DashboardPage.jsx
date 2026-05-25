@@ -12,8 +12,8 @@ import { setAlerts } from '../store/index.js';
 
 export default function DashboardPage() {
   const dispatch    = useDispatch();
-  const alerts      = useSelector(s => s.alerts.items);
-  const watchlist   = useSelector(s => s.watchlist.items);
+  const alerts      = useSelector(s => Array.isArray(s.alerts.items) ? s.alerts.items : []);
+  const watchlist   = useSelector(s => Array.isArray(s.watchlist.items) ? s.watchlist.items : []);
   const [deals, setDeals]   = useState([]);
   const [trends, setTrends] = useState({ rising: [], falling: [] });
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,11 @@ export default function DashboardPage() {
           api.get('/deals/today'),
         ]);
         if (alertsRes.status === 'fulfilled') {
-          dispatch(setAlerts({ alerts: alertsRes.value.data.alerts, unreadCount: alertsRes.value.data.unreadCount }));
+          const data = alertsRes.value.data;
+          dispatch(setAlerts({
+            alerts: Array.isArray(data) ? data : data.alerts,
+            unreadCount: Array.isArray(data) ? data.filter(a => !(a.is_read || a.isRead)).length : data.unreadCount,
+          }));
         }
         if (trendsRes.status === 'fulfilled') setTrends(trendsRes.value.data);
         if (dealsRes.status === 'fulfilled')  setDeals(dealsRes.value.data.deals || []);
@@ -55,7 +59,7 @@ export default function DashboardPage() {
       <div className="grid-4">
         {[
           { label: 'Watchlist Items',    value: watchlist.length,       icon: Star,       color: 'var(--color-accent-primary)'   },
-          { label: 'Unread Alerts',      value: alerts.filter(a=>!a.isRead).length, icon: Bell, color: 'var(--color-accent-warning)' },
+          { label: 'Unread Alerts',      value: alerts.filter(a => !(a.is_read || a.isRead)).length, icon: Bell, color: 'var(--color-accent-warning)' },
           { label: 'Rising Cards Today', value: trends.rising?.length || 0, icon: TrendingUp,  color: 'var(--color-accent-rising)'  },
           { label: 'Deals Found Today',  value: deals.length,           icon: Zap,        color: 'var(--color-accent-gold)'      },
         ].map(({ label, value, icon: Icon, color }) => (
@@ -124,7 +128,7 @@ export default function DashboardPage() {
                     <div style={{ fontWeight: 500, fontSize: '0.8125rem' }}>{alert.cardName || 'Market Update'}</div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 2 }}>{alert.message}</div>
                   </div>
-                  {alert.price && <div className="price-tag" style={{ fontSize: '0.875rem' }}>${alert.price?.toFixed(2)}</div>}
+                  {alert.price && <div className="price-tag" style={{ fontSize: '0.875rem' }}>${Number(alert.price).toFixed(2)}</div>}
                 </div>
               ))}
             </div>

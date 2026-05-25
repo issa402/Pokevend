@@ -25,7 +25,10 @@ type Publisher struct {
 // NewPublisher creates a new RabbitMQ publisher with retry logic
 func NewPublisher(url string) (*Publisher, error) {
 	if url == "" {
-		url = "amqp://guest:guest@localhost:5672"
+		// Docker mode default: use the Compose service name "rabbitmq".
+		// If the scraper is run directly on your laptop, this should be
+		// amqp://guest:guest@localhost:5672 instead.
+		url = "amqp://guest:guest@rabbitmq:5672"
 	}
 
 	p := &Publisher{url: url}

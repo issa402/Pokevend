@@ -7,11 +7,12 @@
 // Zero business logic — pure SQL operations.
 //
 // ALERT-SPECIFIC QUERY PATTERNS:
-//   ListByUser:   paginated list of alerts for the dashboard
-//   MarkRead:     single UPDATE for one alert (with user_id check)
-//   MarkAllRead:  bulk UPDATE for all a user's alerts
-//   Delete:       DELETE with user_id check (security!)
-//   Insert:       called by notification_worker only
+//
+//	ListByUser:   paginated list of alerts for the dashboard
+//	MarkRead:     single UPDATE for one alert (with user_id check)
+//	MarkAllRead:  bulk UPDATE for all a user's alerts
+//	Delete:       DELETE with user_id check (security!)
+//	Insert:       called by notification_worker only
 //
 // CRITICAL SECURITY PATTERN: Always Include user_id in WHERE Clauses
 // BAD:  DELETE FROM alerts WHERE id=$1
@@ -24,7 +25,9 @@
 // one of the OWASP Top 10 security mistakes.
 //
 // GO CONCEPTS:
-//   pgx.ErrNoRows detection, RETURNING clause, UUID generation
+//
+//	pgx.ErrNoRows detection, RETURNING clause, UUID generation
+//
 // ============================================================
 package store
 
@@ -59,13 +62,12 @@ func NewAlertStore(db *pgxpool.Pool) AlertStore {
 	return &postgresAlertStore{db: db}
 }
 
-
 // ListByUser returns the most recent alerts for a user, newest first.
 // limit prevents loading thousands of alerts at once (pagination).
 // ORDER BY created_at DESC = newest alerts first (most relevant to the user).
 func (s *postgresAlertStore) ListByUser(ctx context.Context, userID string, limit int) ([]models.Alert, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT id,user_id,card_name,alert_type,message,marketplace,price,listing_url,is_read,created_at
+		`SELECT id,user_id,card_name,alert_type,message,marketplace,price,listing_url,listing_id,is_read,created_at
 		 FROM alerts WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`,
 		userID, limit,
 	)
@@ -77,7 +79,7 @@ func (s *postgresAlertStore) ListByUser(ctx context.Context, userID string, limi
 	for rows.Next() {
 		var a models.Alert
 		rows.Scan(&a.ID, &a.UserID, &a.CardName, &a.AlertType, &a.Message,
-			&a.Marketplace, &a.Price, &a.ListingURL, &a.IsRead, &a.CreatedAt)
+			&a.Marketplace, &a.Price, &a.ListingURL, &a.ListingID, &a.IsRead, &a.CreatedAt)
 		alerts = append(alerts, a)
 	}
 	return alerts, nil
@@ -121,9 +123,20 @@ func (s *postgresAlertStore) Delete(ctx context.Context, id, userID string) erro
 func (s *postgresAlertStore) Insert(ctx context.Context, a models.Alert) (string, error) {
 	var id string
 	err := s.db.QueryRow(ctx,
-		`INSERT INTO alerts(user_id,card_name,alert_type,message,marketplace,price,listing_url)
-		 VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-		a.UserID, a.CardName, a.AlertType, a.Message, a.Marketplace, a.Price, a.ListingURL,
+		`INSERT INTO alerts(user_id,card_name,alert_type,message,marketplace,price,listing_url,listing_id)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+		 ON CONFLICT (user_id, marketplace, listing_id)
+		 WHERE listing_id IS NOT NULL AND listing_id <> ''
+		 DO UPDATE SET
+		     card_name = EXCLUDED.card_name,
+		     alert_type = EXCLUDED.alert_type,
+		     message = EXCLUDED.message,
+		     price = EXCLUDED.price,
+		     listing_url = EXCLUDED.listing_url,
+		     is_read = false,
+		     created_at = NOW()
+		 RETURNING id`,
+		a.UserID, a.CardName, a.AlertType, a.Message, a.Marketplace, a.Price, a.ListingURL, a.ListingID,
 	).Scan(&id)
 	return id, err
 }
@@ -140,19 +153,20 @@ func (s *postgresAlertStore) GetWatchedAlerts(ctx context.Context, userID string
 //
 // STEP 1: Add this line to the AlertStore interface above (between GetWatchedAlerts and the closing })
 //
-//   GetUnreadCount(ctx context.Context, userID string) (int, error)
+//	GetUnreadCount(ctx context.Context, userID string) (int, error)
 func (s *postgresAlertStore) GetUnreadCount(ctx context.Context, userID string) (int, error) {
 	var count int
-	err:= s.db.QueryRow(ctx,
+	err := s.db.QueryRow(ctx,
 		`SELECT COUNT(*)
 		 FROM alerts WHERE user_id = $1 AND is_read = false`, userID,
-		).Scan(&count)
-		if err != nil {
-			return 0, err
-		}
-		return count, nil
+	).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 
 }
+
 // STEP 2: Implement the method below on postgresAlertStore.
 // Signature:
 //

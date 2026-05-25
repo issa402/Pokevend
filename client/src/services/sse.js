@@ -56,6 +56,7 @@ function handleSSEEvent(data) {
     // A watchlist card dropped below buy target
     case 'PRICE_DROP':
     case 'PRICE_SPIKE':
+    case 'WATCHLIST_HIT':
     case 'TREND_UPDATE':
     case 'DEAL_FOUND': {
       // Format into an alert item and add to the Redux store
@@ -67,6 +68,7 @@ function handleSSEEvent(data) {
         price:       data.price,
         marketplace: data.marketplace,
         listingUrl:  data.listingUrl,
+        listingId:   data.listingId,
         isRead:      false,
         createdAt:   data.timestamp || new Date().toISOString(),
       }));

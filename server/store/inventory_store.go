@@ -22,8 +22,8 @@ func NewInventoryStore(db *pgxpool.Pool) InventoryStore { return &postgresInvent
 
 func (s *postgresInventoryStore) ListByUser(ctx context.Context, userID string) ([]models.InventoryItem, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT id,user_id,card_name,set_name,card_number,condition,quantity,
-		        purchase_price,current_value,notes,acquired_at
+		`SELECT id,user_id,card_name,set_name,card_number,external_card_id,rarity,image_url,
+		        market_updated_at,price_source,condition,quantity,purchase_price,current_value,notes,acquired_at
 		 FROM inventory WHERE user_id=$1 ORDER BY acquired_at DESC`, userID,
 	)
 	if err != nil {
@@ -33,8 +33,11 @@ func (s *postgresInventoryStore) ListByUser(ctx context.Context, userID string) 
 	var items []models.InventoryItem
 	for rows.Next() {
 		var i models.InventoryItem
-		rows.Scan(&i.ID, &i.UserID, &i.CardName, &i.SetName, &i.CardNumber,
-			&i.Condition, &i.Quantity, &i.PurchasePrice, &i.CurrentValue, &i.Notes, &i.AcquiredAt)
+		rows.Scan(
+			&i.ID, &i.UserID, &i.CardName, &i.SetName, &i.CardNumber, &i.ExternalCardID, &i.Rarity, &i.ImageURL,
+			&i.MarketUpdatedAt, &i.PriceSource, &i.Condition, &i.Quantity, &i.PurchasePrice, &i.CurrentValue,
+			&i.Notes, &i.AcquiredAt,
+		)
 		items = append(items, i)
 	}
 	return items, nil
@@ -43,10 +46,13 @@ func (s *postgresInventoryStore) ListByUser(ctx context.Context, userID string) 
 func (s *postgresInventoryStore) Insert(ctx context.Context, item models.InventoryItem) (string, error) {
 	var id string
 	err := s.db.QueryRow(ctx,
-		`INSERT INTO inventory (user_id,card_name,set_name,card_number,condition,quantity,purchase_price,notes)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-		item.UserID, item.CardName, item.SetName, item.CardNumber,
-		item.Condition, item.Quantity, item.PurchasePrice, item.Notes,
+		`INSERT INTO inventory (
+			user_id,card_name,set_name,card_number,external_card_id,rarity,image_url,
+			market_updated_at,price_source,condition,quantity,purchase_price,current_value,notes
+		 )
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+		item.UserID, item.CardName, item.SetName, item.CardNumber, item.ExternalCardID, item.Rarity, item.ImageURL,
+		item.MarketUpdatedAt, item.PriceSource, item.Condition, item.Quantity, item.PurchasePrice, item.CurrentValue, item.Notes,
 	).Scan(&id)
 	return id, err
 }

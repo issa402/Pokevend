@@ -25,12 +25,12 @@
 package config
 
 import (
-	"errors"
-	"fmt"
-	"os"
-	"strconv"
+	"errors"  // Provides functions to create and manipulate new error messages (e.g., errors.New)
+	"fmt"     // Formatted I/O package used for printing text to the console, formatting strings, and scanning input
+	"os"      // Provides a platform-independent interface to operating system functions like accessing environment variables (os.Getenv) or file system interaction
+	"strconv" // Converts string representations of basic data types to actual types (e.g., string to int)
 
-	"github.com/joho/godotenv"
+	"github.com/joho/godotenv" // Third-party library to load environment variables from a .env file into the system's environment variables
 )
 
 // Config holds all application configuration.
@@ -61,32 +61,42 @@ type Config struct {
 
 	// Scraping configuration
 	ScrapingIntervalMinutes int
+
+	// PokeTCG / PokeAi market data service
+	PokeTCGBaseURL     string
+	APIConsumerBaseURL string
 }
 
 // Load reads all environment variables and returns a Config.
 // Called once in main.go: cfg := config.Load()
 // Environment variables come from: .env file (dev) or EC2 environment (prod)
 
+// the pointer in front of config returns a memory address not the actual data, instead of copying the entire Config struct everytime we use it we can just pass a tiny map to where the data lives in memory
 func Load() *Config {
+	// the reason theres a "_" is because if env returns nothing so error we ignore it so we can use the default values
 	_ = godotenv.Load("../.env")
-	return &Config{
+	return &Config{ // the & symbol takes a struct and find its location in memory since the function signature says it returns a pointer *Config we must use the & to point to the struct
 		// getEnv(key, default) — if KEY is not set, use the default
 		// This means the server works with zero config in development
 		Port:      getEnv("PORT", "3001"),
 		Env:       getEnv("NODE_ENV", "development"),
 		ClientURL: getEnv("CLIENT_URL", "http://localhost:5173"),
 
-		// PostgreSQL connection details — must match docker-compose.yml
-		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
+		// PostgreSQL connection details — default to the Docker service name.
+		// If you run the Go server directly on your laptop, switch POSTGRES_HOST to "localhost".
+		PostgresHost:     getEnv("POSTGRES_HOST", "postgres"),
 		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
 		PostgresDB:       getEnv("POSTGRES_DB", "pokemontool"),
 		PostgresUser:     getEnv("POSTGRES_USER", "pokemontool_user"),
 		PostgresPassword: getEnv("POSTGRES_PASSWORD", "pokemontool_pass"),
 
-		// Redis — default is the Docker service name "redis:6379"
+		// Redis — default is the Docker service name "redis:6379".
+		// If you run the Go server directly on your laptop, use "localhost:6379".
 		RedisAddr: getEnv("REDIS_URL", "redis:6379"),
 
-		// RabbitMQ — default is guest:guest (dev only; use strong creds in prod)
+		// RabbitMQ — default is the Docker service name "rabbitmq".
+		// If you run the Go server directly on your laptop, use
+		// amqp://guest:guest@localhost:5672
 		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672"),
 
 		// CRITICAL SECURITY: These MUST be overridden in production via .env or EC2 secrets
@@ -94,6 +104,10 @@ func Load() *Config {
 		// ENCRYPTION_KEY: must be exactly 64 hex chars = 32 bytes = AES-256
 		JWTSecret:     getEnv("JWT_SECRET", "change-me-in-production"),
 		EncryptionKey: getEnv("ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000"),
+
+		// PokeTCG market data API. In Docker Compose this resolves to the poketcg service.
+		PokeTCGBaseURL:     getEnv("POKETCG_BASE_URL", "http://poketcg:8765"),
+		APIConsumerBaseURL: getEnv("API_CONSUMER_BASE_URL", "http://api-consumer:8001"),
 	}
 }
 

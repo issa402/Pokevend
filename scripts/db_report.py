@@ -39,8 +39,13 @@ import sys
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
+from psycopg2 import sql
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env")) #gets me to the .env
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
+DEFAULT_HOST_MODE_POSTGRES_HOST = "localhost"
+
+load_dotenv(ENV_FILE) #gets me to the .env
 
 # ANSI color codes for terminal output
 # These escape codes tell the terminal to change text color
@@ -52,12 +57,33 @@ BOLD   = "\033[1m"
 NC     = "\033[0m"  # No Color (reset)
 
 
+def running_inside_docker() -> bool:
+    """Return True when this script itself is running inside a container."""
+    return os.path.exists("/.dockerenv")
+
+
+def postgres_host() -> str:
+    """
+    Choose the correct Postgres hostname for where the script is running.
+
+    Docker Compose services can resolve the service name "postgres".
+    Your laptop shell cannot, so local script runs should use localhost
+    because docker-compose.yml publishes Postgres on 127.0.0.1:5432.
+    """
+    configured_host = os.getenv("POSTGRES_HOST", DEFAULT_HOST_MODE_POSTGRES_HOST)
+
+    if configured_host == "postgres" and not running_inside_docker():
+        return DEFAULT_HOST_MODE_POSTGRES_HOST
+
+    return configured_host
+
+
 def get_db_connection() -> psycopg2.extensions.connection:
     """Build a DB URL from environment variables and connect."""
     url = (
         f"postgres://{os.getenv('POSTGRES_USER','pokemontool_user')}:"
         f"{os.getenv('POSTGRES_PASSWORD','pokemontool_pass')}@"
-        f"{os.getenv('POSTGRES_HOST','localhost')}:"
+        f"{postgres_host()}:"
         f"{os.getenv('POSTGRES_PORT','5432')}/"
         f"{os.getenv('POSTGRES_DB','pokemontool')}"
     )
@@ -95,7 +121,11 @@ def get_table_counts(conn) -> list:
         for table in tables:
             # COUNT(*) each table individually
             # We can't do this in one query easily because each table is dynamic
-            cur.execute(f"SELECT COUNT(*) AS count FROM {table}")
+            cur.execute(
+                sql.SQL("SELECT COUNT(*) AS count FROM {table}").format(
+                    table=sql.Identifier(table),
+                )
+            )
             count = cur.fetchone()["count"]
             results.append({"table": table, "rows": count})
 

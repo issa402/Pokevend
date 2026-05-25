@@ -34,6 +34,10 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -44,13 +48,22 @@ import (
 
 // CardService handles card business logic with Redis caching.
 type CardService struct {
-	store store.CardStore // PostgreSQL queries
-	cache *redis.Client   // Redis for caching
+	store          store.CardStore // PostgreSQL queries
+	cache          *redis.Client   // Redis for caching
+	pokeTCGBaseURL string
+	apiConsumerURL string
+	httpClient     *http.Client
 }
 
 // NewCardService is the constructor — injects store (DB) and cache (Redis).
-func NewCardService(store store.CardStore, cache *redis.Client) *CardService {
-	return &CardService{store: store, cache: cache}
+func NewCardService(store store.CardStore, cache *redis.Client, pokeTCGBaseURL string, apiConsumerURL string) *CardService {
+	return &CardService{
+		store:          store,
+		cache:          cache,
+		pokeTCGBaseURL: strings.TrimRight(pokeTCGBaseURL, "/"),
+		apiConsumerURL: strings.TrimRight(apiConsumerURL, "/"),
+		httpClient:     &http.Client{Timeout: 15 * time.Second},
+	}
 }
 
 // Search finds cards by name with a 5-minute cache.
@@ -122,8 +135,113 @@ func (s *CardService) GetPriceHistory(ctx context.Context, cardID string) ([]mod
 	return s.store.GetPriceHistory(ctx, cardID)
 }
 
+func (s *CardService) GetSlabMarketSummary(ctx context.Context, externalCardID string, languagePreference string) ([]models.SlabMarketSummary, error) {
+	return s.store.GetSlabMarketSummary(ctx, externalCardID, normalizeLanguagePreference(languagePreference))
+}
+
 func (s *CardService) GetByID(ctx context.Context, id string) (*models.Card, error) {
 	return s.store.GetByID(ctx, id)
+}
+
+// SearchPokeTCG returns real market-data-backed card variants from the PokeTCG service.
+func (s *CardService) SearchPokeTCG(ctx context.Context, query string, limit int) ([]models.PokeTCGCard, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, ErrCardNameRequired
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	u, err := url.Parse(s.pokeTCGBaseURL + "/search")
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("q", query)
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("poketcg search returned status %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Cards []models.PokeTCGCard `json:"cards"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if payload.Cards == nil {
+		payload.Cards = []models.PokeTCGCard{}
+	}
+	return payload.Cards, nil
+}
+
+func (s *CardService) SearchEbayListings(ctx context.Context, cardName, externalCardID, setName, assetType, slabTier, languagePreference string, pages int) ([]models.EbayLiveListing, error) {
+	if strings.TrimSpace(cardName) == "" {
+		return nil, ErrCardNameRequired
+	}
+	if assetType == "" {
+		assetType = "RAW"
+	}
+
+	u, err := url.Parse(s.apiConsumerURL + "/ebay/search")
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("cardName", cardName)
+	q.Set("assetType", assetType)
+	q.Set("publish", "false")
+	q.Set("languagePreference", normalizeLanguagePreference(languagePreference))
+	if pages <= 0 || pages > 5 {
+		pages = 2
+	}
+	q.Set("pages", fmt.Sprintf("%d", pages))
+	if externalCardID != "" {
+		q.Set("externalCardId", externalCardID)
+	}
+	if setName != "" {
+		q.Set("setName", setName)
+	}
+	if slabTier != "" {
+		q.Set("slabTier", slabTier)
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("ebay live search returned status %d", resp.StatusCode)
+	}
+	var payload struct {
+		Listings []models.EbayLiveListing `json:"listings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if payload.Listings == nil {
+		payload.Listings = []models.EbayLiveListing{}
+	}
+	return payload.Listings, nil
 }
 
 // InvalidateTrendingCache clears the trending cache.

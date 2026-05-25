@@ -110,10 +110,10 @@ func main() {
 	// This means: in tests, you can pass a fake UserStore that returns mock data.
 	// Services know WHAT to do (business rules) but not HOW to store (that's stores).
 	authSvc := services.NewAuthService(userStore, cfg.JWTSecret)
-	cardSvc := services.NewCardService(cardStore, rdb) // rdb = Redis for caching
+	cardSvc := services.NewCardService(cardStore, rdb, cfg.PokeTCGBaseURL, cfg.APIConsumerBaseURL) // rdb = Redis for caching
 	alertSvc := services.NewAlertService(alertStore)
-	watchlistSvc := services.NewWatchlistService(watchlistStore)
-	inventorySvc := services.NewInventoryService(inventoryStore)
+	watchlistSvc := services.NewWatchlistService(watchlistStore, cfg.APIConsumerBaseURL, cardStore)
+	inventorySvc := services.NewInventoryService(inventoryStore, cardStore)
 	dealSvc := services.NewDealService(dealStore, rdb)
 	showSvc := services.NewShowService(showStore, rdb)
 

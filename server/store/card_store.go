@@ -34,6 +34,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -53,6 +54,9 @@ type CardStore interface {
 	GetPriceHistory(ctx context.Context, cardID string) ([]models.PricePoint, error)
 	GetByID(ctx context.Context, cardID string) (*models.Card, error)
 	UpdatePrice(ctx context.Context, name string, marketplace string, price float64) error
+	UpsertPriceSnapshot(ctx context.Context, cardID string, marketplace string, price float64) error
+	UpsertListingSnapshot(ctx context.Context, listing models.ListingSnapshot) error
+	GetSlabMarketSummary(ctx context.Context, externalCardID string, languagePreference string) ([]models.SlabMarketSummary, error)
 }
 
 // postgresCardStore is the CONCRETE implementation using PostgreSQL.
@@ -110,6 +114,159 @@ func (s *postgresCardStore) UpdatePrice(ctx context.Context, name string, market
 		WHERE name = $2`, marketplace)
 	_, err := s.db.Exec(ctx, query, price, name)
 	return err
+}
+
+func (s *postgresCardStore) UpsertPriceSnapshot(ctx context.Context, cardID string, marketplace string, price float64) error {
+	column := "price_tcgplayer"
+	if marketplace == "ebay" {
+		column = "price_ebay"
+	}
+	query := fmt.Sprintf(
+		`INSERT INTO price_history (card_id, date, avg_price, %s, sale_count)
+		 VALUES ($1, CURRENT_DATE, $2, $2, 1)
+		 ON CONFLICT (card_id, date)
+		 DO UPDATE SET avg_price = EXCLUDED.avg_price, %s = EXCLUDED.%s`,
+		column, column, column,
+	)
+	_, err := s.db.Exec(ctx, query, cardID, price)
+	return err
+}
+
+func (s *postgresCardStore) UpsertListingSnapshot(ctx context.Context, listing models.ListingSnapshot) error {
+	if listing.ListingID == nil || *listing.ListingID == "" {
+		return nil
+	}
+	_, err := s.db.Exec(ctx,
+		`INSERT INTO card_listings (
+			card_name, marketplace, price, listing_url, image_url, condition, listing_id,
+			set_name, external_card_id, is_slab, grader, grade, slab_tier, listing_title, language_preference, discovered_at
+		 )
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW())
+		 ON CONFLICT (marketplace, listing_id)
+		 DO UPDATE SET
+			price = EXCLUDED.price,
+			listing_url = EXCLUDED.listing_url,
+			image_url = EXCLUDED.image_url,
+			condition = EXCLUDED.condition,
+			set_name = EXCLUDED.set_name,
+			external_card_id = EXCLUDED.external_card_id,
+			is_slab = EXCLUDED.is_slab,
+			grader = EXCLUDED.grader,
+			grade = EXCLUDED.grade,
+			slab_tier = EXCLUDED.slab_tier,
+			listing_title = EXCLUDED.listing_title,
+			language_preference = EXCLUDED.language_preference,
+			discovered_at = NOW()`,
+		listing.CardName, listing.Marketplace, listing.Price, listing.ListingURL, listing.ImageURL,
+		listing.Condition, listing.ListingID, listing.SetName, listing.ExternalCardID, listing.IsSlab,
+		listing.Grader, listing.Grade, listing.SlabTier, listing.ListingTitle, listing.LanguagePreference,
+	)
+	return err
+}
+
+func (s *postgresCardStore) GetSlabMarketSummary(ctx context.Context, externalCardID string, languagePreference string) ([]models.SlabMarketSummary, error) {
+	rows, err := s.db.Query(ctx,
+		`WITH ranked AS (
+			SELECT
+				COALESCE(NULLIF(slab_tier, ''), 'RAW') AS slab_tier,
+				price::float8,
+				listing_url,
+				listing_id,
+				listing_title,
+				image_url,
+				condition,
+				COALESCE(language_preference, 'BOTH') AS language_preference,
+				discovered_at,
+				COUNT(*) OVER (PARTITION BY COALESCE(NULLIF(slab_tier, ''), 'RAW')) AS listing_count,
+				ROW_NUMBER() OVER (
+					PARTITION BY COALESCE(NULLIF(slab_tier, ''), 'RAW')
+					ORDER BY price ASC, discovered_at DESC
+				) AS rn
+			FROM card_listings
+			WHERE external_card_id = $1
+			  AND listing_title IS NOT NULL
+			  AND ($2 = 'BOTH' OR COALESCE(language_preference, 'BOTH') = $2)
+			  AND discovered_at >= NOW() - INTERVAL '7 days'
+			  AND COALESCE(NULLIF(slab_tier, ''), 'RAW') IN (
+				'RAW','PSA_10','PSA_9','PSA_8','PSA_7',
+				'CGC_10','CGC_9_5','CGC_9',
+				'BGS_10','BGS_9_5','BGS_9'
+			  )
+		)
+		SELECT slab_tier, price, listing_url, listing_id, listing_title, image_url, condition, language_preference, discovered_at, listing_count
+		FROM ranked
+		WHERE rn <= 5
+		ORDER BY CASE slab_tier
+			WHEN 'RAW' THEN 0
+			WHEN 'PSA_10' THEN 1 WHEN 'PSA_9' THEN 2 WHEN 'PSA_8' THEN 3 WHEN 'PSA_7' THEN 4
+			WHEN 'CGC_10' THEN 5 WHEN 'CGC_9_5' THEN 6 WHEN 'CGC_9' THEN 7
+			WHEN 'BGS_10' THEN 8 WHEN 'BGS_9_5' THEN 9 WHEN 'BGS_9' THEN 10
+			ELSE 99
+		END, price ASC, discovered_at DESC`,
+		externalCardID, normalizeLanguagePreference(languagePreference),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	summaries := []models.SlabMarketSummary{}
+	byTier := map[string]int{}
+	for rows.Next() {
+		var tier string
+		var listing models.SlabListing
+		var count int
+		if err := rows.Scan(&tier, &listing.Price, &listing.ListingURL, &listing.ListingID, &listing.ListingTitle, &listing.ImageURL, &listing.Condition, &listing.LanguagePreference, &listing.ObservedAt, &count); err != nil {
+			return nil, err
+		}
+		index, ok := byTier[tier]
+		if !ok {
+			price := listing.Price
+			summaries = append(summaries, models.SlabMarketSummary{
+				SlabTier:    tier,
+				Label:       slabTierLabel(tier),
+				LowestPrice: &price,
+				ListingURL:  listing.ListingURL,
+				ListingID:   listing.ListingID,
+				ObservedAt:  listing.ObservedAt,
+				Count:       count,
+				Listings:    []models.SlabListing{},
+			})
+			index = len(summaries) - 1
+			byTier[tier] = index
+		}
+		summaries[index].Listings = append(summaries[index].Listings, listing)
+	}
+	return summaries, nil
+}
+
+func slabTierLabel(tier string) string {
+	switch tier {
+	case "RAW":
+		return "Raw"
+	case "PSA_10":
+		return "PSA 10"
+	case "PSA_9":
+		return "PSA 9"
+	case "PSA_8":
+		return "PSA 8"
+	case "PSA_7":
+		return "PSA 7"
+	case "CGC_10":
+		return "CGC 10"
+	case "CGC_9_5":
+		return "CGC 9.5"
+	case "CGC_9":
+		return "CGC 9"
+	case "BGS_10":
+		return "BGS 10"
+	case "BGS_9_5":
+		return "BGS 9.5"
+	case "BGS_9":
+		return "BGS 9"
+	default:
+		return tier
+	}
 }
 
 // queryByLabel is a private helper — reduces duplication between rising/falling queries.
@@ -192,6 +349,17 @@ func scanCards(rows interface {
 		cards = append(cards, c)
 	}
 	return cards, nil
+}
+
+func normalizeLanguagePreference(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "ENGLISH", "EN":
+		return "ENGLISH"
+	case "JAPANESE", "JP", "JPN":
+		return "JAPANESE"
+	default:
+		return "BOTH"
+	}
 }
 
 // TODO #1 (Practice): Implement GetBySetName(ctx, setName string) method

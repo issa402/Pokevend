@@ -8,11 +8,11 @@
 // Read by handlers/alert_handler.go for the alerts panel in the dashboard.
 //
 // THE ALERT LIFECYCLE:
-//   1. Python publishes listing → RabbitMQ "listings" queue
-//   2. Go notification_worker consumes → matches watchlists
-//   3. If match → INSERT into alerts table, push via SSE
-//   4. User opens dashboard → GET /api/alerts → reads from alerts table
-//   5. User clicks "Mark Read" → PUT /api/alerts/{id}/read → is_read = true
+//  1. Python publishes listing → RabbitMQ "listings" queue
+//  2. Go notification_worker consumes → matches watchlists
+//  3. If match → INSERT into alerts table, push via SSE
+//  4. User opens dashboard → GET /api/alerts → reads from alerts table
+//  5. User clicks "Mark Read" → PUT /api/alerts/{id}/read → is_read = true
 //
 // KEY FIELD: IsRead (bool with default false)
 // The unread count in the navbar badge = COUNT(*) WHERE is_read=false
@@ -20,8 +20,10 @@
 //
 // POINTER FIELDS (*string, *float64):
 // Alerts from different alert_types may not have all fields.
-//   TREND_CHANGE alert: has card_name, no price or listing_url
-//   PRICE_DROP alert:   has card_name, price, listing_url, marketplace
+//
+//	TREND_CHANGE alert: has card_name, no price or listing_url
+//	PRICE_DROP alert:   has card_name, price, listing_url, marketplace
+//
 // Using *string (pointer) = optional. nil means "not applicable for this alert type."
 // ============================================================
 package models
@@ -29,7 +31,7 @@ package models
 import "time"
 
 // Alert represents a single notification event for a user.
-
+// the pointer in front of the types mean can be nil
 type Alert struct {
 	ID          string     `json:"id"`
 	UserID      string     `json:"userId"`
@@ -39,6 +41,7 @@ type Alert struct {
 	Marketplace *string    `json:"marketplace"` // "ebay", "tcgplayer", nil for trends
 	Price       *float64   `json:"price"`       // nil if not price-related
 	ListingURL  *string    `json:"listingUrl"`  // direct link to the listing
+	ListingID   *string    `json:"listingId"`   // marketplace listing identifier for dedupe
 	IsRead      bool       `json:"isRead"`      // false until user dismisses it
 	CreatedAt   *time.Time `json:"createdAt"`
 }

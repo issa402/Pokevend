@@ -3,7 +3,7 @@
 // Full history of all triggered price and trend alerts
 // ============================================================
 
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Bell, CheckCheck, ExternalLink, TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import api from '../services/api.js';
@@ -13,6 +13,7 @@ import { setAlerts, markAlertsRead } from '../store/index.js';
 const ALERT_META = {
   PRICE_DROP:  { icon: TrendingDown, color: 'var(--color-accent-rising)',   label: 'Price Drop'   },
   PRICE_SPIKE: { icon: TrendingUp,   color: 'var(--color-accent-falling)',  label: 'Price Spike'  },
+  WATCHLIST_HIT:{ icon: Zap,         color: 'var(--color-accent-gold)',     label: 'Watchlist Hit' },
   TREND_CHANGE:{ icon: TrendingUp,   color: 'var(--color-accent-secondary)',label: 'Trend Change' },
   DEAL_FOUND:  { icon: Zap,          color: 'var(--color-accent-gold)',     label: 'Deal Found'   },
   DEAL_OF_DAY: { icon: Zap,          color: 'var(--color-accent-gold)',     label: 'Deal of Day'  },
@@ -22,10 +23,34 @@ export default function AlertsPage() {
   const dispatch    = useDispatch();
   const { items, unreadCount } = useSelector(s => s.alerts);
 
-  useEffect(() => {
-    api.get('/alerts?limit=100').then(r => {
-      dispatch(setAlerts({ alerts: r.data.alerts, unreadCount: r.data.unreadCount }));
+  const loadAlerts = useCallback(() => {
+    api.get(`/alerts?limit=100&_=${Date.now()}`).then(r => {
+      const data = r.data;
+      const alerts = Array.isArray(data) ? data : data.alerts;
+      const newestFirst = Array.isArray(alerts)
+        ? [...alerts].sort((a, b) => new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0))
+        : [];
+      dispatch(setAlerts({
+        alerts: newestFirst,
+        unreadCount: Array.isArray(data) ? newestFirst.filter(a => !(a.is_read || a.isRead)).length : data.unreadCount,
+      }));
     });
+  }, [loadAlerts]);
+
+  useEffect(() => {
+    loadAlerts();
+
+    const refreshOnFocus = () => loadAlerts();
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') loadAlerts();
+    };
+
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnVisible);
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnVisible);
+    };
   }, [dispatch]);
 
   async function handleMarkAllRead() {

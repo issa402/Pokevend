@@ -81,6 +81,34 @@ func (h *CardHandler) Search(w http.ResponseWriter, r *http.Request) {
 	pkg.JSON(w, http.StatusOK, cards)
 }
 
+// TCGSearch handles GET /api/cards/tcg-search?q=charizard&limit=20.
+// It searches the real market-data service, returning exact card/set variants.
+func (h *CardHandler) TCGSearch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		pkg.Error(w, http.StatusBadRequest, "query parameter 'q' is required")
+		return
+	}
+
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+
+	cards, err := h.svc.SearchPokeTCG(r.Context(), q, limit)
+	if err != nil {
+		pkg.Error(w, http.StatusBadGateway, "market data search failed")
+		return
+	}
+	pkg.JSON(w, http.StatusOK, map[string]interface{}{
+		"cards": cards,
+		"count": len(cards),
+		"query": q,
+	})
+}
+
 // Trending handles GET /api/cards/trending
 // Returns top 10 rising and top 10 falling cards.
 func (h *CardHandler) Trending(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +141,67 @@ func (h *CardHandler) PriceHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg.JSON(w, http.StatusOK, history)
+}
+
+func (h *CardHandler) SlabSummary(w http.ResponseWriter, r *http.Request) {
+	cardID := chi.URLParam(r, "id")
+	if cardID == "" {
+		pkg.Error(w, http.StatusBadRequest, "card id required")
+		return
+	}
+
+	summary, err := h.svc.GetSlabMarketSummary(r.Context(), cardID, r.URL.Query().Get("languagePreference"))
+	if err != nil {
+		pkg.Error(w, http.StatusInternalServerError, "failed to load slab summary")
+		return
+	}
+	pkg.JSON(w, http.StatusOK, map[string]interface{}{
+		"cardId":  cardID,
+		"summary": summary,
+	})
+}
+
+func (h *CardHandler) EbayListings(w http.ResponseWriter, r *http.Request) {
+	cardName := r.URL.Query().Get("cardName")
+	if cardName == "" {
+		pkg.Error(w, http.StatusBadRequest, "query parameter 'cardName' is required")
+		return
+	}
+
+	listings, err := h.svc.SearchEbayListings(
+		r.Context(),
+		cardName,
+		r.URL.Query().Get("externalCardId"),
+		r.URL.Query().Get("setName"),
+		r.URL.Query().Get("assetType"),
+		r.URL.Query().Get("slabTier"),
+		r.URL.Query().Get("languagePreference"),
+		intQuery(r, "pages", 2, 1, 5),
+	)
+	if err != nil {
+		pkg.Error(w, http.StatusBadGateway, "ebay listing search failed")
+		return
+	}
+	pkg.JSON(w, http.StatusOK, map[string]interface{}{
+		"count":    len(listings),
+		"listings": listings,
+	})
+}
+
+func intQuery(r *http.Request, key string, defaultValue int, minValue int, maxValue int) int {
+	value := defaultValue
+	if raw := r.URL.Query().Get(key); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			value = parsed
+		}
+	}
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
 }
 
 // TODO #1 (Practice): Add GetCardDetail handler

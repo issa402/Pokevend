@@ -42,8 +42,9 @@ const alertsSlice = createSlice({
   initialState: { items: [], unreadCount: 0 },
   reducers: {
     setAlerts: (state, action) => {
-      state.items       = action.payload.alerts;
-      state.unreadCount = action.payload.unreadCount;
+      const payload = action.payload || {};
+      state.items       = Array.isArray(payload.alerts) ? payload.alerts : [];
+      state.unreadCount = Number.isFinite(payload.unreadCount) ? payload.unreadCount : 0;
     },
     // Push a single new alert (received via SSE)
     addAlert: (state, action) => {
@@ -62,7 +63,7 @@ const watchlistSlice = createSlice({
   name: 'watchlist',
   initialState: { items: [] },
   reducers: {
-    setWatchlist: (state, action) => { state.items = action.payload; },
+    setWatchlist: (state, action) => { state.items = Array.isArray(action.payload) ? action.payload : []; },
     addWatchlistItem: (state, action) => { state.items.unshift(action.payload); },
     removeWatchlistItem: (state, action) => {
       state.items = state.items.filter(i => i.id !== action.payload);
@@ -76,9 +77,10 @@ const trendsSlice = createSlice({
   initialState: { rising: [], falling: [], updatedAt: null },
   reducers: {
     setTrends: (state, action) => {
-      state.rising    = action.payload.rising;
-      state.falling   = action.payload.falling;
-      state.updatedAt = action.payload.updatedAt;
+      const payload = action.payload || {};
+      state.rising    = Array.isArray(payload.rising) ? payload.rising : [];
+      state.falling   = Array.isArray(payload.falling) ? payload.falling : [];
+      state.updatedAt = payload.updatedAt || null;
     },
   },
 });
@@ -89,8 +91,9 @@ const inventorySlice = createSlice({
   initialState: { items: [], total: 0 },
   reducers: {
     setInventory: (state, action) => {
-      state.items = action.payload.inventory;
-      state.total = action.payload.total;
+      const payload = action.payload || {};
+      state.items = Array.isArray(payload.inventory) ? payload.inventory : [];
+      state.total = Number.isFinite(payload.total) ? payload.total : state.items.length;
     },
     removeInventoryItem: (state, action) => {
       state.items = state.items.filter(i => i.id !== action.payload);

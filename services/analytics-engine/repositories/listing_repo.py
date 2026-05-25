@@ -19,9 +19,9 @@ class ListingRepo:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
-                    """SELECT price, marketplace, listing_url, condition, scraped_at
+                    """SELECT price, marketplace, listing_url, condition, discovered_at
                        FROM card_listings WHERE LOWER(card_name)=LOWER(%s)
-                       ORDER BY scraped_at DESC LIMIT %s""",
+                       ORDER BY discovered_at DESC LIMIT %s""",
                     (card_name, limit),
                 )
                 return cur.fetchall()
@@ -38,7 +38,7 @@ class ListingRepo:
                        JOIN cards c ON LOWER(cl.card_name)=LOWER(c.name)
                        WHERE c.price_tcgplayer IS NOT NULL
                          AND cl.price < c.price_tcgplayer * ((100 - %s) / 100.0)
-                         AND cl.scraped_at > NOW() - INTERVAL '24 hours'
+                         AND cl.discovered_at > NOW() - INTERVAL '24 hours'
                        ORDER BY ((c.price_tcgplayer - cl.price) / c.price_tcgplayer) DESC
                        LIMIT 20""",
                     (threshold_pct,),

@@ -26,7 +26,7 @@ func NewPriceAlertStore(db *pgxpool.Pool) PriceAlertStore {
 
 func (s *postgresPriceAlertStore) GetActiveAlertsForCard(ctx context.Context, cardName string) ([]models.PriceAlertSettings, error) {
 	query := `
-			SELECT id, user_id, card_name, threhold, direction
+			SELECT id, user_id, card_name, threshold, direction
 			FROM price_alerts_settings
 			WHERE card_name = $1 AND is_active = true;`
 

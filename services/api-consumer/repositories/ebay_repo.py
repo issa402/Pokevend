@@ -97,7 +97,7 @@ class EbayRepo:
 
         return self._token
 
-    async def search_listings(self, card_name: str, limit: int = 50) -> Dict[str, Any]:
+    async def search_listings(self, card_name: str, limit: int = 200, max_pages: int = 1) -> Dict[str, Any]:
         """
         #Search eBay's Browse API for Pokémon card listings by name.
         #Returns raw eBay API response (dict with "itemSummaries" array).
@@ -111,20 +111,33 @@ class EbayRepo:
         """
         token = await self.get_token()
 
+        page_limit = min(max(limit, 1), 200)
+        page_count = min(max(max_pages, 1), 5)
+        combined: Dict[str, Any] = {"itemSummaries": [], "total": 0}
+
         async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/buy/browse/v1/item_summary/search",
-                # Authorization: Bearer <token> = standard OAuth2 bearer token header
-                headers={"Authorization": f"Bearer {token}"},
-                # params= = URL query parameters (?q=...&limit=...&filter=...)
-                params={
-                    "q": f"{card_name} pokemon card", # Slightly better keyword order
-                    "limit": limit,
-                    "filter": "categoryIds:{183454},buyingOptions:{FIXED_PRICE}", 
-                },
-            )
-            resp.raise_for_status()
-            return resp.json()  # returns the full eBay response as a Python dict
+            for page in range(page_count):
+                resp = await client.get(
+                    f"{self.base_url}/buy/browse/v1/item_summary/search",
+                    # Authorization: Bearer <token> = standard OAuth2 bearer token header
+                    headers={"Authorization": f"Bearer {token}"},
+                    # params= = URL query parameters (?q=...&limit=...&filter=...)
+                    params={
+                        "q": f"{card_name} pokemon card", # Slightly better keyword order
+                        "limit": page_limit,
+                        "offset": page * page_limit,
+                        "filter": "categoryIds:{183454},buyingOptions:{FIXED_PRICE}",
+                        "sort": "price",
+                        "auto_correct": "KEYWORD",
+                    },
+                )
+                resp.raise_for_status()
+                payload = resp.json()
+                combined["total"] = payload.get("total", combined["total"])
+                combined["itemSummaries"].extend(payload.get("itemSummaries", []))
+                if not payload.get("next"):
+                    break
+            return combined  # returns the full eBay response as a Python dict
 
 # ============================================================
 # TODO #1 (Practice): Add token expiry handling

@@ -186,19 +186,19 @@ class CardRepo:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 sql = f"""
-                    INSER INTO price_history (card_id, date, {column}, avg_prcie)
+                    INSER INTO price_history (card_id, date, {column}, avg_price)
                     VALUES(%s, CURRENT_DATE, %s, %s)
                     ON CONFLICT (card_id, date)
                     DO UPDATE SET
                         {column} = EXCLUDED.{column},
                         avg_price = (
                             COALESCE(price_history.price_ebay, EXCLUDED.{column})+
-                            COALESCE(price_history.price_tcgplayer, EXCLUDED.{column})
+                            COALESCE(price_history.price_tgcplayer, EXCLUDED.{column})
                         )/2
                 """
 
                 cur.execute(sql, (card_id, price, price))
-            conn.coomit()
+            conn.commit()
 
 
 # ============================================================

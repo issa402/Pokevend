@@ -29,6 +29,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"pokemontool/middleware"
+	"pokemontool/models"
 	"pokemontool/pkg"
 	"pokemontool/services"
 )
@@ -62,7 +63,19 @@ func (h *AlertHandler) List(w http.ResponseWriter, r *http.Request) {
 		pkg.Error(w, http.StatusInternalServerError, "failed to load alerts")
 		return
 	}
-	pkg.JSON(w, http.StatusOK, alerts)
+	if alerts == nil {
+		alerts = []models.Alert{}
+	}
+	unreadCount := 0
+	for _, alert := range alerts {
+		if !alert.IsRead {
+			unreadCount++
+		}
+	}
+	pkg.JSON(w, http.StatusOK, map[string]interface{}{
+		"alerts":      alerts,
+		"unreadCount": unreadCount,
+	})
 }
 
 // MarkRead handles PUT /api/alerts/{id}/read

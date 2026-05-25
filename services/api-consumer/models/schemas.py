@@ -52,9 +52,12 @@ class CardListing(BaseModel):
 
     # REQUIRED fields — must be provided, no default
     card_name: str              # "Charizard Base Set"
+    external_card_id: Optional[str] = None
     price: float                # must be a number (Pydantic converts "12.5" → 12.5)
     marketplace: str            # "ebay" | "tcgplayer" | "facebook" | "mercari"
     listing_url: str            # URL to the actual listing
+    listing_id: Optional[str] = None
+    listing_title: Optional[str] = None
 
     # OPTIONAL fields — can be None (= NULL in SQL, null in JSON)
     # Optional[str] = Union[str, None] = either a string or nothing
@@ -62,6 +65,12 @@ class CardListing(BaseModel):
     condition: Optional[str] = None      # "NM", "LP", "MP", "HP", "Damaged"
     set_name: Optional[str] = None
     seller_rating: Optional[float] = None
+    is_slab: bool = False
+    grader: Optional[str] = None
+    grade: Optional[str] = None
+    slab_tier: str = "RAW"
+    cert_number: Optional[str] = None
+    language_preference: str = "BOTH"
 
     # DEFAULT value: if not provided, use datetime.utcnow() at creation time
     # Note: datetime.utcnow() is called ONCE per field definition (class level)

@@ -37,8 +37,8 @@ type Card struct {
 	Name   string `json:"name"`
 
 	// Nullable strings — use *string because set_name can be NULL in DB
-	SetName *string `json:"setName"`
-	SetCode *string `json:"setCode"`
+	SetName  *string `json:"setName"`
+	SetCode  *string `json:"setCode"`
 	ImageURL *string `json:"imageUrl"`
 
 	// Trend data computed by Python analytics-engine
@@ -63,10 +63,89 @@ type Card struct {
 // Used by the Chart.js chart on the card detail page.
 // Stored in the price_history table and read by store/card_store.go.
 type PricePoint struct {
-	Date     string   `json:"date"`           // "2024-01-15" (DATE type from PostgreSQL)
-	AvgPrice *float64 `json:"avgPrice"`       // average across all marketplaces
+	Date      string   `json:"date"`     // "2024-01-15" (DATE type from PostgreSQL)
+	AvgPrice  *float64 `json:"avgPrice"` // average across all marketplaces
 	PriceEbay *float64 `json:"priceEbay"`
 	PriceTCG  *float64 `json:"priceTcgplayer"`
+}
+
+type ListingSnapshot struct {
+	CardName           string
+	ExternalCardID     *string
+	Marketplace        string
+	Price              float64
+	ListingURL         *string
+	ListingTitle       *string
+	ImageURL           *string
+	Condition          *string
+	ListingID          *string
+	SetName            *string
+	IsSlab             bool
+	Grader             *string
+	Grade              *string
+	SlabTier           string
+	LanguagePreference string
+}
+
+type SlabListing struct {
+	Price              float64    `json:"price"`
+	ListingURL         *string    `json:"listingUrl"`
+	ListingID          *string    `json:"listingId"`
+	ListingTitle       *string    `json:"listingTitle"`
+	ImageURL           *string    `json:"imageUrl"`
+	Condition          *string    `json:"condition"`
+	ObservedAt         *time.Time `json:"observedAt"`
+	LanguagePreference string     `json:"languagePreference"`
+}
+
+type EbayLiveListing struct {
+	CardName           string  `json:"card_name"`
+	ExternalCardID     *string `json:"external_card_id"`
+	Price              float64 `json:"price"`
+	Marketplace        string  `json:"marketplace"`
+	ListingURL         string  `json:"listing_url"`
+	ListingID          *string `json:"listing_id"`
+	ListingTitle       *string `json:"listing_title"`
+	ImageURL           *string `json:"image_url"`
+	Condition          *string `json:"condition"`
+	SetName            *string `json:"set_name"`
+	IsSlab             bool    `json:"is_slab"`
+	Grader             *string `json:"grader"`
+	Grade              *string `json:"grade"`
+	SlabTier           string  `json:"slab_tier"`
+	CertNumber         *string `json:"cert_number"`
+	LanguagePreference string  `json:"language_preference"`
+	ScrapedAt          *string `json:"scraped_at"`
+}
+
+type SlabMarketSummary struct {
+	SlabTier    string        `json:"slabTier"`
+	Label       string        `json:"label"`
+	LowestPrice *float64      `json:"lowestPrice"`
+	ListingURL  *string       `json:"listingUrl"`
+	ListingID   *string       `json:"listingId"`
+	ObservedAt  *time.Time    `json:"observedAt"`
+	Count       int           `json:"count"`
+	Listings    []SlabListing `json:"listings"`
+}
+
+// PokeTCGCard is a market-data search result from the local PokeTCG/PokeAi service.
+// It represents an exact external card variant, not a row from our cards table.
+type PokeTCGCard struct {
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Set                 string   `json:"set"`
+	Series              string   `json:"series"`
+	Number              string   `json:"number"`
+	Rarity              string   `json:"rarity"`
+	Image               string   `json:"image"`
+	BestVariant         string   `json:"bestVariant"`
+	Market              *float64 `json:"market"`
+	TCGPlayerUpdatedAt  string   `json:"tcgplayerUpdatedAt"`
+	TCGPlayerURL        string   `json:"tcgplayerUrl"`
+	CardmarketTrend     *float64 `json:"cardmarketTrend"`
+	CardmarketUpdatedAt string   `json:"cardmarketUpdatedAt"`
+	CardmarketURL       string   `json:"cardmarketUrl"`
 }
 
 // TODO #1 (Practice): Add a CardSearchResult type

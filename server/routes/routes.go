@@ -65,6 +65,8 @@ func Register(
 	// At FAANG, this endpoint is called every 30 seconds by health checks.
 
 	r.Get("/health", health.Check)
+	r.Get("/api/health/freshness", health.Freshness)
+	r.Get("/metrics", health.FreshnessMetrics)
 
 	// ── API Routes ───────────────────────────────────────────────
 	// All API routes live under /api prefix.
@@ -78,6 +80,7 @@ func Register(
 		r.Post("/auth/login", auth.Login)
 
 		r.Get("/internal/watchlist-names", watchlist.GetWatchedNames)
+		r.Get("/internal/watchlist-targets", watchlist.GetScanTargets)
 		// ── SSE Stream ─────────────────────────────────────────────
 		// GET /api/stream?token=<jwt>
 		// WHY token in URL (not header)?
@@ -96,10 +99,14 @@ func Register(
 
 			// ── Cards ─────────────────────────────────────
 			// GET /api/cards/search?q=charizard&limit=20
+			// GET /api/cards/tcg-search?q=charizard&limit=20
 			// GET /api/cards/trending
 			// GET /api/cards/{id}/history
 			r.Get("/cards/search", cards.Search)
+			r.Get("/cards/tcg-search", cards.TCGSearch)
+			r.Get("/cards/ebay-listings", cards.EbayListings)
 			r.Get("/cards/trending", cards.Trending)
+			r.Get("/cards/{id}/slab-summary", cards.SlabSummary)
 			r.Get("/cards/{id}/history", cards.PriceHistory)
 			r.Get("/cards/{id}", cards.Detail)
 			// {id} = URL parameter. In the handler: chi.URLParam(r, "id")
