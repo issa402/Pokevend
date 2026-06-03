@@ -117,6 +117,38 @@ class EbayServiceMatchingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(listings[0].slab_tier, "CGC_10")
         self.assertEqual(listings[0].price, 999.99)
 
+    async def test_scan_card_uses_scrapling_when_browse_api_fails(self):
+        class FailingBrowseRepo:
+            async def search_listings(self, query, limit=200, max_pages=1):
+                raise RuntimeError("401 Unauthorized")
+
+        import services.ebay_service as ebay_service
+        original = ebay_service._scrape_ebay_active_listings
+        try:
+            ebay_service._scrape_ebay_active_listings = lambda query: [{
+                "title": "2006 POKEMON EX LEGEND MAKER #26 SPINDA-REVERSE FOIL PSA 7",
+                "price": {"value": 125.00},
+                "itemWebUrl": "https://www.ebay.com/itm/spinda-psa7",
+                "itemId": "spinda-psa7",
+            }]
+            publisher = FakePublisher()
+            service = EbayService(FailingBrowseRepo(), publisher)
+            listings = await service.scan_card(
+                card_name="Spinda",
+                external_card_id="ex12-26",
+                set_name="EX Legend Maker",
+                card_number="26",
+                asset_type="SLAB",
+                slab_tier="PSA_7",
+                publish=True,
+            )
+        finally:
+            ebay_service._scrape_ebay_active_listings = original
+
+        self.assertEqual([listing.listing_id for listing in listings], ["spinda-psa7"])
+        self.assertEqual(listings[0].slab_tier, "PSA_7")
+        self.assertEqual(len(publisher.messages), 1)
+
     async def test_scan_card_requires_card_number_when_available(self):
         class MixedNumberRepo:
             async def search_listings(self, query, limit=200, max_pages=1):

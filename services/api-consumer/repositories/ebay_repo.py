@@ -29,8 +29,21 @@
 # ============================================================
 
 import os
+from pathlib import Path
+
 import httpx
+from dotenv import load_dotenv
 from typing import Any, Dict, Optional
+
+
+def _load_env_files() -> None:
+    service_env = Path(__file__).resolve().parents[1] / ".env"
+    app_env = Path(__file__).resolve().parents[3] / ".env"
+    load_dotenv(service_env, override=False)
+    load_dotenv(app_env, override=False)
+
+
+_load_env_files()
 
 
 class EbayRepo:

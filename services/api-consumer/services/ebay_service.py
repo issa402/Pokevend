@@ -99,6 +99,7 @@ class EbayService:
                 slab_query=slab_query,
             )
             query = queries[0]
+            used_web_fallback = False
             raw_items = []
             seen_item_ids = set()
             for search_query in queries:
@@ -114,13 +115,17 @@ class EbayService:
             raw = {"itemSummaries": raw_items}
             if asset_type == "SLAB" and not raw.get("itemSummaries"):
                 raw = {"itemSummaries": _scrape_ebay_active_listings(query)}
+                used_web_fallback = True
         except Exception as e:
             # Catch ALL exceptions from the repo — network errors, auth failures, etc.
-            # Return empty list (don't crash the scanner loop for one card)
+            # Slab scans still try the web fallback because Browse auth can fail while public eBay search works.
             logger.error(f"eBay search failed for '{card_name}': {e}")
-            raw = {"itemSummaries": []}
-
-        used_web_fallback = asset_type == "SLAB" and not raw.get("itemSummaries")
+            if asset_type == "SLAB":
+                raw = {"itemSummaries": _scrape_ebay_active_listings(query)}
+                used_web_fallback = True
+            else:
+                raw = {"itemSummaries": []}
+                used_web_fallback = False
 
         listings = _filter_listing_items(
             raw.get("itemSummaries", []),
