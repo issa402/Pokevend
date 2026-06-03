@@ -9,13 +9,14 @@
 // They ONLY know about business rules.
 //
 // WHAT COUNTS AS BUSINESS LOGIC?
-//   ✅ "Passwords must be at least 6 characters"         → Service
-//   ✅ "Email must be unique" (enforced + caught)        → Service
-//   ✅ "JWT expires in 7 days"                          → Service
-//   ✅ "Use bcrypt cost factor 12"                      → Service
-//   ❌ "Parse JSON from request body"                   → Handler
-//   ❌ "Write 401 status code"                          → Handler
-//   ❌ "Run SELECT query"                               → Store
+//
+//	✅ "Passwords must be at least 6 characters"         → Service
+//	✅ "Email must be unique" (enforced + caught)        → Service
+//	✅ "JWT expires in 7 days"                          → Service
+//	✅ "Use bcrypt cost factor 12"                      → Service
+//	❌ "Parse JSON from request body"                   → Handler
+//	❌ "Write 401 status code"                          → Handler
+//	❌ "Run SELECT query"                               → Store
 //
 // FAANG PATTERN: Named Error Variables
 // Instead of returning error.New("email taken") (hard to check in tests),
@@ -24,14 +25,17 @@
 // This is type-safe and refactor-friendly.
 //
 // GO CONCEPTS:
-//   var ErrX = errors.New(), errors.Is(), bcrypt, JWT signing,
-//   method receivers (s *AuthService), struct initialization
+//
+//	var ErrX = errors.New(), errors.Is(), bcrypt, JWT signing,
+//	method receivers (s *AuthService), struct initialization
+//
 // ============================================================
 package services
 
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -55,22 +59,27 @@ var (
 // It receives a UserStore interface — it could be PostgreSQL, DynamoDB, or a mock.
 // It also receives jwtSecret — the signing key for JWTs.
 type AuthService struct {
-	users     store.UserStore // interface — not *postgresUserStore
-	jwtSecret string
+	users        store.UserStore // interface — not *postgresUserStore
+	jwtSecret    string
+	commerceSync CommerceAccountSyncer
 }
 
 // NewAuthService is the constructor — receives dependencies via injection.
 // Called in main.go: services.NewAuthService(userStore, cfg.JWTSecret)
-func NewAuthService(users store.UserStore, jwtSecret string) *AuthService {
-	return &AuthService{users: users, jwtSecret: jwtSecret}
+func NewAuthService(users store.UserStore, jwtSecret string, syncers ...CommerceAccountSyncer) *AuthService {
+	syncer := CommerceAccountSyncer(noopCommerceAccountSyncer{})
+	if len(syncers) > 0 && syncers[0] != nil {
+		syncer = syncers[0]
+	}
+	return &AuthService{users: users, jwtSecret: jwtSecret, commerceSync: syncer}
 }
 
 // Register creates a new user account.
 // Business rules enforced here:
-//   1. Password must be at least 6 characters
-//   2. Email must be unique (enforced by DB, caught here)
-//   3. Password is ALWAYS hashed before storing — never plaintext
-//   4. JWT is issued immediately on registration (no separate login step)
+//  1. Password must be at least 6 characters
+//  2. Email must be unique (enforced by DB, caught here)
+//  3. Password is ALWAYS hashed before storing — never plaintext
+//  4. JWT is issued immediately on registration (no separate login step)
 func (s *AuthService) Register(ctx context.Context, email, password, displayName string) (*models.User, string, error) {
 	// Rule 1: Password strength validation
 	if len(password) < 6 {
@@ -96,6 +105,10 @@ func (s *AuthService) Register(ctx context.Context, email, password, displayName
 		return nil, "", ErrEmailTaken
 	}
 
+	if err := s.commerceSync.SyncAccount(ctx, user.Email, password, displayNameValue(user.DisplayName)); err != nil {
+		log.Printf("[auth] Odoo account sync failed for user %s: %v", user.ID, err)
+	}
+
 	// Issue JWT immediately so user doesn't have to log in separately after registering.
 	token, err := s.makeToken(user.ID, user.Email)
 	return user, token, err
@@ -103,9 +116,9 @@ func (s *AuthService) Register(ctx context.Context, email, password, displayName
 
 // Login verifies credentials and returns a JWT on success.
 // Business rules:
-//   1. User must exist (by email)
-//   2. Password must match the stored bcrypt hash
-//   3. On success: issue a fresh JWT
+//  1. User must exist (by email)
+//  2. Password must match the stored bcrypt hash
+//  3. On success: issue a fresh JWT
 func (s *AuthService) Login(ctx context.Context, email, password string) (*models.User, string, error) {
 	// GetByEmail returns the user AND their password hash.
 	// We keep the hash separate from models.User — it should never be serialized to JSON.
@@ -124,6 +137,10 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 		return nil, "", ErrInvalidCreds
 	}
 
+	if err := s.commerceSync.SyncAccount(ctx, user.Email, password, displayNameValue(user.DisplayName)); err != nil {
+		log.Printf("[auth] Odoo account sync failed for user %s: %v", user.ID, err)
+	}
+
 	token, err := s.makeToken(user.ID, user.Email)
 	return user, token, err
 }
@@ -132,10 +149,11 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 // This is a private method — only AuthService uses it.
 //
 // JWT STRUCTURE: three base64-encoded parts separated by dots
-//   Header.Payload.Signature
-//   - Header: {"alg": "HS256", "typ": "JWT"}
-//   - Payload (claims): {"id": "uuid", "email": "...", "exp": 1234567890}
-//   - Signature: HMAC-SHA256(header + "." + payload, jwtSecret)
+//
+//	Header.Payload.Signature
+//	- Header: {"alg": "HS256", "typ": "JWT"}
+//	- Payload (claims): {"id": "uuid", "email": "...", "exp": 1234567890}
+//	- Signature: HMAC-SHA256(header + "." + payload, jwtSecret)
 //
 // Anyone can decode the payload (it's just base64), but they can't
 // FORGE a valid token without knowing the secret key.
@@ -171,3 +189,10 @@ func (s *AuthService) makeToken(id, email string) (string, error) {
 //   2. Hash the new password
 //   3. Update the user's password_hash
 //   4. Delete the reset token (one-time use)
+
+func displayNameValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}

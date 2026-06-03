@@ -54,6 +54,7 @@ func Register(
 	watchlist *handlers.WatchlistHandler,
 	inventory *handlers.InventoryHandler,
 	deals *handlers.DealHandler,
+	slabOpportunities *handlers.SlabOpportunityHandler,
 	shows *handlers.ShowHandler,
 	apikeys *handlers.APIKeyHandler,
 	health *handlers.HealthHandler,
@@ -105,6 +106,7 @@ func Register(
 			r.Get("/cards/search", cards.Search)
 			r.Get("/cards/tcg-search", cards.TCGSearch)
 			r.Get("/cards/ebay-listings", cards.EbayListings)
+			r.Post("/cards/ebay-import-text", cards.ImportEbayText)
 			r.Get("/cards/trending", cards.Trending)
 			r.Get("/cards/{id}/slab-summary", cards.SlabSummary)
 			r.Get("/cards/{id}/history", cards.PriceHistory)
@@ -138,17 +140,27 @@ func Register(
 			// GET    /api/inventory            list owned cards
 			// POST   /api/inventory            add card to collection
 			// DELETE /api/inventory/{id}       remove from collection
+			// POST   /api/inventory/{id}/store-listing mark row ready for Odoo/store sync
 			// POST   /api/inventory/import     upload CSV file
 			// GET    /api/inventory/export     download CSV
 			r.Get("/inventory", inventory.List)
 			r.Post("/inventory", inventory.Add)
 			r.Delete("/inventory/{id}", inventory.Delete)
+			r.Post("/inventory/{id}/store-listing", inventory.MarkReadyForStore)
 			r.Post("/inventory/import", inventory.Import)
 			r.Get("/inventory/export", inventory.Export)
 
 			// ── Deals ─────────────────────────────────────
 			// GET /api/deals/today  today's best-value cards
 			r.Get("/deals/today", deals.Today)
+
+			// ── Wholesale Slab Opportunities ──────────────
+			// GET  /api/slab-opportunities ranked wholesale slab candidates
+			// POST /api/slab-opportunities/{id}/approve creates inventory row
+			r.Get("/slab-opportunities", slabOpportunities.List)
+			r.Post("/slab-opportunities/refresh-live", slabOpportunities.RefreshLive)
+			r.Post("/slab-opportunities/{id}/approve", slabOpportunities.Approve)
+			r.Post("/slab-opportunities/{id}/reject", slabOpportunities.Reject)
 
 			// ── Shows ─────────────────────────────────────
 			// GET /api/shows/upcoming  upcoming TCG events near the user

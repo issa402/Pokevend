@@ -25,12 +25,38 @@ const slabOptions = [
   { value: 'PSA_9', label: 'PSA 9' },
   { value: 'PSA_8', label: 'PSA 8' },
   { value: 'PSA_7', label: 'PSA 7' },
+  { value: 'PSA_6', label: 'PSA 6' },
+  { value: 'PSA_5', label: 'PSA 5' },
+  { value: 'PSA_4', label: 'PSA 4' },
+  { value: 'PSA_3', label: 'PSA 3' },
+  { value: 'PSA_2', label: 'PSA 2' },
+  { value: 'PSA_1', label: 'PSA 1' },
   { value: 'CGC_10', label: 'CGC 10' },
   { value: 'CGC_9_5', label: 'CGC 9.5' },
   { value: 'CGC_9', label: 'CGC 9' },
+  { value: 'CGC_8_5', label: 'CGC 8.5' },
+  { value: 'CGC_8', label: 'CGC 8' },
+  { value: 'CGC_7_5', label: 'CGC 7.5' },
+  { value: 'CGC_7', label: 'CGC 7' },
+  { value: 'CGC_6', label: 'CGC 6' },
+  { value: 'CGC_5', label: 'CGC 5' },
+  { value: 'CGC_4', label: 'CGC 4' },
+  { value: 'CGC_3', label: 'CGC 3' },
+  { value: 'CGC_2', label: 'CGC 2' },
+  { value: 'CGC_1', label: 'CGC 1' },
   { value: 'BGS_10', label: 'BGS 10' },
   { value: 'BGS_9_5', label: 'BGS 9.5' },
   { value: 'BGS_9', label: 'BGS 9' },
+  { value: 'BGS_8_5', label: 'BGS 8.5' },
+  { value: 'BGS_8', label: 'BGS 8' },
+  { value: 'BGS_7_5', label: 'BGS 7.5' },
+  { value: 'BGS_7', label: 'BGS 7' },
+  { value: 'BGS_6', label: 'BGS 6' },
+  { value: 'BGS_5', label: 'BGS 5' },
+  { value: 'BGS_4', label: 'BGS 4' },
+  { value: 'BGS_3', label: 'BGS 3' },
+  { value: 'BGS_2', label: 'BGS 2' },
+  { value: 'BGS_1', label: 'BGS 1' },
   { value: 'BGS_BLACK_LABEL', label: 'BGS Black Label' },
 ];
 
@@ -61,6 +87,19 @@ function money(value) {
   return Number.isFinite(num) ? `$${num.toFixed(2)}` : '-';
 }
 
+function effectiveMarketPrice(card) {
+  const primary = Number(card?.market);
+  if (Number.isFinite(primary)) return primary;
+  const trend = Number(card?.cardmarketTrend);
+  return Number.isFinite(trend) ? trend : null;
+}
+
+function marketSourceLabel(card) {
+  if (Number.isFinite(Number(card?.market))) return 'TCGplayer';
+  if (Number.isFinite(Number(card?.cardmarketTrend))) return 'Cardmarket trend';
+  return 'No market price';
+}
+
 function pct(value) {
   const num = Number(value);
   return Number.isFinite(num) ? `${num.toFixed(0)}%` : '-';
@@ -70,6 +109,36 @@ function toNumberOrNull(value) {
   if (value === '' || value === null || value === undefined) return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+
+async function refreshSlabObservations(item) {
+  const cardName = read(item, 'cardName', 'card_name');
+  const externalCardId = read(item, 'externalCardId', 'external_card_id');
+  const setName = read(item, 'setName', 'set_name') || '';
+  const cardNumber = read(item, 'cardNumber', 'card_number') || '';
+  const languagePreference = read(item, 'languagePreference', 'language_preference') || 'BOTH';
+  if (!cardName || !externalCardId) return;
+  const tierRequests = slabOptions.filter(option => option.value !== 'BGS_BLACK_LABEL').map(option => ({ assetType: 'SLAB', slabTier: option.value, pages: '3' }));
+  const requests = [
+    { assetType: 'RAW', slabTier: '', pages: '5' },
+    { assetType: 'SLAB', slabTier: '', pages: '5' },
+    ...tierRequests,
+  ];
+  await Promise.allSettled(requests.map(request => {
+    const params = new URLSearchParams({
+      cardName,
+      externalCardId,
+      setName,
+      cardNumber,
+      assetType: request.assetType,
+      languagePreference,
+      pages: request.pages,
+      publish: 'true',
+    });
+    if (request.slabTier) params.set('slabTier', request.slabTier);
+    return api.get(`/cards/ebay-listings?${params.toString()}`);
+  }));
 }
 
 export default function WatchlistPage() {
@@ -85,13 +154,15 @@ export default function WatchlistPage() {
   const [expandedSlabCard, setExpandedSlabCard] = useState(null);
   const [watchlistSlabs, setWatchlistSlabs] = useState({});
   const [loadingWatchlistSlabs, setLoadingWatchlistSlabs] = useState(null);
+  const [importTextByItem, setImportTextByItem] = useState({});
+  const [importingItemId, setImportingItemId] = useState(null);
   const [liveListings, setLiveListings] = useState([]);
   const [loadingLiveListings, setLoadingLiveListings] = useState(false);
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const calculatedTarget = useMemo(() => {
-    const market = selectedCard?.market;
+    const market = effectiveMarketPrice(selectedCard);
     const discount = Number(form.targetDiscountPct);
     if (!Number.isFinite(market) || !Number.isFinite(discount)) return '';
     return (market * (1 - discount / 100)).toFixed(2);
@@ -137,7 +208,7 @@ export default function WatchlistPage() {
     setLiveListings([]);
     setForm(f => ({
       ...f,
-      targetBuyPrice: card.market ? (card.market * (1 - Number(f.targetDiscountPct || 0) / 100)).toFixed(2) : f.targetBuyPrice,
+      targetBuyPrice: effectiveMarketPrice(card) ? (effectiveMarketPrice(card) * (1 - Number(f.targetDiscountPct || 0) / 100)).toFixed(2) : f.targetBuyPrice,
     }));
     setLoadingSlabs(true);
     try {
@@ -158,6 +229,7 @@ export default function WatchlistPage() {
         cardName: selectedCard.name,
         externalCardId: selectedCard.id,
         setName: selectedCard.set || '',
+        cardNumber: selectedCard.number || '',
         assetType: form.assetType,
         languagePreference: form.languagePreference,
         pages: '2',
@@ -174,7 +246,7 @@ export default function WatchlistPage() {
   }
 
   function summaryRowsFromMap(byTier) {
-    return summaryLanes.map(lane => {
+    const fixedRows = summaryLanes.map(lane => {
       const observed = byTier.get(lane.value);
       return observed ? { ...observed, slabTier: lane.value, label: observed.label || lane.label } : {
         slabTier: lane.value,
@@ -184,6 +256,42 @@ export default function WatchlistPage() {
         listingUrl: '',
       };
     });
+    const fixedTiers = new Set(summaryLanes.map(lane => lane.value));
+    const dynamicRows = Array.from(byTier.entries())
+      .filter(([tier, row]) => !fixedTiers.has(tier) && row && (row.count || row.lowestPrice))
+      .map(([tier, row]) => ({ ...row, slabTier: tier, label: row.label || tier }));
+    return [...fixedRows, ...dynamicRows];
+  }
+
+  async function importEbayText(item) {
+    const itemId = read(item, 'id');
+    const text = importTextByItem[itemId] || '';
+    const cardName = read(item, 'cardName', 'card_name');
+    const externalCardId = read(item, 'externalCardId', 'external_card_id');
+    if (!text.trim() || !cardName || !externalCardId) return;
+
+    setImportingItemId(itemId);
+    try {
+      const languagePreference = read(item, 'languagePreference', 'language_preference') || 'BOTH';
+      await api.post('/cards/ebay-import-text', {
+        cardName,
+        externalCardId,
+        setName: read(item, 'setName', 'set_name') || '',
+        cardNumber: read(item, 'cardNumber', 'card_number') || '',
+        assetType: 'SLAB',
+        languagePreference,
+        publish: true,
+        text,
+      });
+      await new Promise(resolve => setTimeout(resolve, 700));
+      const { data } = await api.get(`/cards/${encodeURIComponent(externalCardId)}/slab-summary?languagePreference=${encodeURIComponent(languagePreference)}`);
+      setWatchlistSlabs(current => ({ ...current, [itemId]: data.summary || [] }));
+      setImportTextByItem(current => ({ ...current, [itemId]: '' }));
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not import eBay text');
+    } finally {
+      setImportingItemId(null);
+    }
   }
 
   async function toggleWatchlistSlabs(item) {
@@ -197,11 +305,11 @@ export default function WatchlistPage() {
     }
 
     setExpandedSlabCard(itemId);
-    if (watchlistSlabs[itemId]) return;
 
     setLoadingWatchlistSlabs(itemId);
     try {
       const languagePreference = read(item, 'languagePreference', 'language_preference') || 'BOTH';
+      await refreshSlabObservations(item);
       const { data } = await api.get(`/cards/${encodeURIComponent(externalCardId)}/slab-summary?languagePreference=${encodeURIComponent(languagePreference)}`);
       setWatchlistSlabs(current => ({ ...current, [itemId]: data.summary || [] }));
     } catch {
@@ -213,7 +321,7 @@ export default function WatchlistPage() {
 
   function updateDiscount(value) {
     setForm(f => {
-      const market = selectedCard?.market;
+      const market = effectiveMarketPrice(selectedCard);
       const next = { ...f, targetDiscountPct: value };
       const discount = Number(value);
       if (Number.isFinite(market) && Number.isFinite(discount)) {
@@ -234,7 +342,7 @@ export default function WatchlistPage() {
         cardNumber: selectedCard?.number || '',
         rarity: selectedCard?.rarity || '',
         imageUrl: selectedCard?.image || '',
-        marketPrice: selectedCard?.market ?? null,
+        marketPrice: effectiveMarketPrice(selectedCard),
         marketUpdatedAt: selectedCard?.tcgplayerUpdatedAt || selectedCard?.cardmarketUpdatedAt || '',
         targetDiscountPct: selectedCard ? toNumberOrNull(form.targetDiscountPct) : null,
         priceSource: 'poketcg',
@@ -250,6 +358,9 @@ export default function WatchlistPage() {
 
       const { data } = await api.post('/watchlist', payload);
       dispatch(addWatchlistItem(data.item));
+      if (data.item?.externalCardId || data.item?.external_card_id) {
+        refreshSlabObservations(data.item).catch(() => {});
+      }
       setShowAdd(false);
       resetAddForm();
     } catch (err) {
@@ -348,7 +459,7 @@ export default function WatchlistPage() {
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: 'block', fontWeight: 700, fontSize: '0.875rem' }}>{card.name}</span>
                       <span style={{ display: 'block', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{card.set} #{card.number}</span>
-                      <span className="price-tag" style={{ display: 'block', fontSize: '0.9rem', marginTop: 4 }}>{money(card.market)}</span>
+                      <span className="price-tag" style={{ display: 'block', fontSize: '0.9rem', marginTop: 4 }}>{money(effectiveMarketPrice(card))}</span>
                     </span>
                   </button>
                 );
@@ -414,7 +525,7 @@ export default function WatchlistPage() {
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginBottom: 4 }}>Market</div>
-                <div className="price-tag" style={{ fontSize: '1rem' }}><DollarSign size={15} /> {selectedCard ? money(selectedCard.market) : '-'}</div>
+                <div className="price-tag" style={{ fontSize: '1rem' }}><DollarSign size={15} /> {selectedCard ? money(effectiveMarketPrice(selectedCard)) : '-'}</div>
               </div>
             </div>
 
@@ -445,7 +556,7 @@ export default function WatchlistPage() {
                 <div style={{ overflowX: 'auto' }}>
                   <table className="data-table">
                     <thead>
-                      <tr><th>Lane</th><th>Lowest Active</th><th>Listings</th><th>Top Matches</th></tr>
+                      <tr><th>Lane</th><th>Lowest Active</th><th>Listings</th><th>Matches</th></tr>
                     </thead>
                     <tbody>
                       {renderSlabSummaryRows(visibleSummaryRows)}
@@ -546,17 +657,33 @@ export default function WatchlistPage() {
                         <div style={{ padding: 16 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 10 }}>
                             <strong style={{ fontSize: '0.875rem' }}>Observed eBay Slabs</strong>
-                            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{loadingWatchlistSlabs === itemId ? 'Loading...' : 'Last 7 days'}</span>
+                            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{loadingWatchlistSlabs === itemId ? 'Scanning eBay live...' : 'Live eBay + last 7 days'}</span>
                           </div>
                           <div style={{ overflowX: 'auto' }}>
                             <table className="data-table">
                               <thead>
-                                <tr><th>Lane</th><th>Lowest Active</th><th>Listings</th><th>Top Matches</th></tr>
+                                <tr><th>Lane</th><th>Lowest Active</th><th>Listings</th><th>Matches</th></tr>
                               </thead>
                               <tbody>
                                 {renderSlabSummaryRows(rowSummary)}
                               </tbody>
                             </table>
+                          </div>
+                          <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+                            <textarea
+                              className="input"
+                              value={importTextByItem[itemId] || ''}
+                              onChange={e => setImportTextByItem(current => ({ ...current, [itemId]: e.target.value }))}
+                              placeholder="Paste copied eBay search results for this exact card here"
+                              rows={5}
+                              style={{ resize: 'vertical', minHeight: 96 }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Imported rows are filtered by card name, set, number, language, and slab grade before saving.</span>
+                              <button className="btn btn-secondary" type="button" onClick={() => importEbayText(item)} disabled={importingItemId === itemId || !(importTextByItem[itemId] || '').trim()}>
+                                <Plus size={15} /> {importingItemId === itemId ? 'Importing...' : 'Import eBay Text'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </td>

@@ -2,12 +2,12 @@ import re
 from typing import Optional
 
 
-GRADER_PATTERN = re.compile(r"\b(PSA|CGC|BGS|BECKETT|SGC|ACE|TAG)\b", re.IGNORECASE)
+GRADER_PATTERN = re.compile(r"\b(PSA|CGC|BGS|BECKETT|SGC|ACE|TAG|GSG)\b", re.IGNORECASE)
 CERT_PATTERN = re.compile(r"\b(?:CERT|CERTIFICATE|CERT\s*#|CERTIFICATION)\s*[:#]?\s*(\d{5,})\b", re.IGNORECASE)
 GRADE_PATTERNS = [
     re.compile(r"\b(?:GEM\s+MINT|GEM\s+MT)\s*10\b", re.IGNORECASE),
     re.compile(r"\b(?:PRISTINE|PERFECT)\s*10\b", re.IGNORECASE),
-    re.compile(r"\b(10|9\.5|9|8\.5|8|7\.5|7|6\.5|6|5\.5|5)\b", re.IGNORECASE),
+    re.compile(r"\b(10|9\.5|9|8\.5|8|7\.5|7|6\.5|6|5\.5|5|4\.5|4|3\.5|3|2\.5|2|1\.5|1)\b", re.IGNORECASE),
 ]
 
 

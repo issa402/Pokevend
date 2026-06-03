@@ -9,3 +9,7 @@ aio-pika==9.4.1        # async RabbitMQ publisher
 httpx==0.27.0          # async HTTP client for eBay/TCGplayer APIs
 python-dotenv==1.0.1
 tcgdex-sdk==2.2.1
+# Adaptive scraping for sold comps/listing ingestion. BSD-3-Clause.
+scrapling[fetchers]==0.4.7
+psycopg2-binary==2.9.9
+playwright==1.54.0

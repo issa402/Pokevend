@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"io"
+	"log"
 	"strconv"
 
 	"pokemontool/models"
@@ -12,14 +13,20 @@ import (
 )
 
 type InventoryService struct {
-	inv   store.InventoryStore
-	cards store.CardStore
+	inv         store.InventoryStore
+	cards       store.CardStore
+	productSync CommerceProductSyncer
 }
 
-func NewInventoryService(inv store.InventoryStore, cards ...store.CardStore) *InventoryService {
-	s := &InventoryService{inv: inv}
-	if len(cards) > 0 {
-		s.cards = cards[0]
+func NewInventoryService(inv store.InventoryStore, deps ...any) *InventoryService {
+	s := &InventoryService{inv: inv, productSync: noopCommerceAccountSyncer{}}
+	for _, dep := range deps {
+		switch typed := dep.(type) {
+		case store.CardStore:
+			s.cards = typed
+		case CommerceProductSyncer:
+			s.productSync = typed
+		}
 	}
 	return s
 }
@@ -43,6 +50,21 @@ func (s *InventoryService) Add(ctx context.Context, item models.InventoryItem) (
 
 func (s *InventoryService) Delete(ctx context.Context, itemID, userID string) error {
 	return s.inv.Delete(ctx, itemID, userID)
+}
+
+func (s *InventoryService) MarkReadyForStore(ctx context.Context, itemID, userID string, input models.StoreListingInput) (*models.InventoryItem, error) {
+	item, err := s.inv.MarkReadyForStore(ctx, itemID, userID, input)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.productSync.SyncInventoryProduct(ctx, *item); err != nil {
+		log.Printf("[inventory] Odoo product sync failed for inventory %s: %v", item.ID, err)
+		return item, nil
+	}
+	if err := s.inv.MarkStoreSynced(ctx, itemID, userID); err != nil {
+		log.Printf("[inventory] failed to mark store sync for inventory %s: %v", item.ID, err)
+	}
+	return item, nil
 }
 
 // ImportCSV parses a CSV reader and bulk-inserts items for the user

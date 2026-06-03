@@ -29,3 +29,16 @@ def test_unknown_graded_listing():
     result = parse_slab("Charizard graded slabbed card")
     assert result["is_slab"] is True
     assert result["slab_tier"] == "GRADED_UNKNOWN"
+
+
+def test_parse_lower_psa_grade():
+    result = parse_slab("2004 Pokemon EX Team Rocket Returns Azumarill PSA 3 VG")
+    assert result["is_slab"] is True
+    assert result["slab_tier"] == "PSA_3"
+
+
+def test_parse_gsg_unknown_grade_as_slab():
+    result = parse_slab("GSG Marill Azumarill EX Team Rocket Returns English Holo Like PSA BGS")
+    assert result["is_slab"] is True
+    assert result["grader"] == "GSG"
+    assert result["slab_tier"] == "GSG_UNKNOWN"

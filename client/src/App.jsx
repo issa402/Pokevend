@@ -19,6 +19,7 @@ import InventoryPage  from './pages/InventoryPage.jsx';
 import ShowsPage      from './pages/ShowsPage.jsx';
 import AlertsPage     from './pages/AlertsPage.jsx';
 import SettingsPage   from './pages/SettingsPage.jsx';
+import SlabOpportunitiesPage from './pages/SlabOpportunitiesPage.jsx';
 import LoginPage      from './pages/LoginPage.jsx';
 
 // ---- Protected Layout ----
@@ -62,6 +63,8 @@ export default function App() {
           <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/trends"    element={<TrendsPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/finder" element={<SlabOpportunitiesPage />} />
+          <Route path="/slab-opportunities" element={<Navigate to="/finder" replace />} />
           <Route path="/shows"     element={<ShowsPage />} />
           <Route path="/alerts"    element={<AlertsPage />} />
           <Route path="/settings"  element={<SettingsPage />} />

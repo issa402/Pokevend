@@ -103,19 +103,22 @@ func main() {
 	inventoryStore := store.NewInventoryStore(db)
 	dealStore := store.NewDealStore(db)
 	showStore := store.NewShowStore(db)
+	slabOpportunityStore := store.NewSlabOpportunityStore(db)
 
 	// ── LAYER 4: Services (Business Logic) ────────────────────
 	// Services receive INTERFACES (not concrete types).
 	// Example: authSvc receives UserStore interface, not *postgresUserStore.
 	// This means: in tests, you can pass a fake UserStore that returns mock data.
 	// Services know WHAT to do (business rules) but not HOW to store (that's stores).
-	authSvc := services.NewAuthService(userStore, cfg.JWTSecret)
+	odooAccountSync := services.NewOdooAccountSyncer(cfg.OdooURL, cfg.OdooDB, cfg.OdooUsername, cfg.OdooPassword)
+	authSvc := services.NewAuthService(userStore, cfg.JWTSecret, odooAccountSync)
 	cardSvc := services.NewCardService(cardStore, rdb, cfg.PokeTCGBaseURL, cfg.APIConsumerBaseURL) // rdb = Redis for caching
 	alertSvc := services.NewAlertService(alertStore)
 	watchlistSvc := services.NewWatchlistService(watchlistStore, cfg.APIConsumerBaseURL, cardStore)
-	inventorySvc := services.NewInventoryService(inventoryStore, cardStore)
+	inventorySvc := services.NewInventoryService(inventoryStore, cardStore, odooAccountSync)
 	dealSvc := services.NewDealService(dealStore, rdb)
 	showSvc := services.NewShowService(showStore, rdb)
+	slabOpportunitySvc := services.NewSlabOpportunityService(slabOpportunityStore, cfg.APIConsumerBaseURL)
 
 	// ── LAYER 5: Handlers (HTTP Layer) ────────────────────────
 	// Handlers receive SERVICE instances (not store instances).
@@ -131,6 +134,7 @@ func main() {
 	inventoryH := handlers.NewInventoryHandler(inventorySvc)
 	dealH := handlers.NewDealHandler(dealSvc)
 	showH := handlers.NewShowHandler(showSvc)
+	slabOpportunityH := handlers.NewSlabOpportunityHandler(slabOpportunitySvc)
 	apikeyH := handlers.NewAPIKeyHandler(db, cfg) // apikey doesn't have a service yet
 
 	// ── LAYER 6: Background Worker ────────────────────────────
@@ -169,7 +173,7 @@ func main() {
 	// ── LAYER 8: Route Registration ───────────────────────────
 	// All URL → handler mappings live in routes/routes.go (single source of truth).
 	// We pass all handler instances to routes.Register so it can wire them.
-	routes.Register(r, cfg, sseManager, authH, cardH, alertH, priceAlertH, watchlistH, inventoryH, dealH, showH, apikeyH, healthH)
+	routes.Register(r, cfg, sseManager, authH, cardH, alertH, priceAlertH, watchlistH, inventoryH, dealH, slabOpportunityH, showH, apikeyH, healthH)
 
 	// ── Start Server ──────────────────────────────────────────
 	// http.ListenAndServe blocks forever, serving requests.

@@ -90,3 +90,10 @@ test-results/
 
 secrets.txt
 secerets.txt
+
+# --- Local browser/session state ---
+.local/
+
+# --- Local analysis/cache artifacts ---
+.understand-anything/
+*.save

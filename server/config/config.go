@@ -65,6 +65,12 @@ type Config struct {
 	// PokeTCG / PokeAi market data service
 	PokeTCGBaseURL     string
 	APIConsumerBaseURL string
+
+	// Odoo account/product sync. Password is read from env only; never hardcode it.
+	OdooURL      string
+	OdooDB       string
+	OdooUsername string
+	OdooPassword string
 }
 
 // Load reads all environment variables and returns a Config.
@@ -105,9 +111,14 @@ func Load() *Config {
 		JWTSecret:     getEnv("JWT_SECRET", "change-me-in-production"),
 		EncryptionKey: getEnv("ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000"),
 
-		// PokeTCG market data API. In Docker Compose this resolves to the poketcg service.
-		PokeTCGBaseURL:     getEnv("POKETCG_BASE_URL", "http://poketcg:8765"),
+		// PokeTCG market data API. Local development uses the host-published port; Docker Compose overrides this to http://poketcg:8765.
+		PokeTCGBaseURL:     getEnv("POKETCG_BASE_URL", "http://127.0.0.1:8765"),
 		APIConsumerBaseURL: getEnv("API_CONSUMER_BASE_URL", "http://api-consumer:8001"),
+
+		OdooURL:      getEnv("ODOO_URL", ""),
+		OdooDB:       getEnv("ODOO_DB", ""),
+		OdooUsername: getEnv("ODOO_USERNAME", ""),
+		OdooPassword: getEnv("ODOO_PASSWORD", ""),
 	}
 }
 

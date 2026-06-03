@@ -37,6 +37,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -185,10 +187,311 @@ func (s *CardService) SearchPokeTCG(ctx context.Context, query string, limit int
 	if payload.Cards == nil {
 		payload.Cards = []models.PokeTCGCard{}
 	}
+	if len(payload.Cards) == 0 {
+		return s.searchPokeTCGFallback(ctx, query, limit)
+	}
 	return payload.Cards, nil
 }
 
-func (s *CardService) SearchEbayListings(ctx context.Context, cardName, externalCardID, setName, assetType, slabTier, languagePreference string, pages int) ([]models.EbayLiveListing, error) {
+func (s *CardService) searchPokeTCGFallback(ctx context.Context, query string, limit int) ([]models.PokeTCGCard, error) {
+	tokens := searchTokens(query)
+	if len(tokens) < 2 {
+		return []models.PokeTCGCard{}, nil
+	}
+
+	if exactCards, err := s.searchOfficialCollectorCandidates(ctx, query, tokens, limit); err != nil {
+		return nil, err
+	} else if len(exactCards) > 0 {
+		return exactCards, nil
+	}
+
+	candidateLimit := limit * 10
+	if candidateLimit < 50 {
+		candidateLimit = 50
+	}
+	if candidateLimit > 100 {
+		candidateLimit = 100
+	}
+
+	seen := map[string]bool{}
+	candidates := []models.PokeTCGCard{}
+	for _, token := range candidateSearchTokens(tokens) {
+		cards, err := s.fetchPokeTCG(ctx, token, candidateLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, card := range cards {
+			if card.ID == "" || seen[card.ID] {
+				continue
+			}
+			seen[card.ID] = true
+			candidates = append(candidates, card)
+		}
+		if len(candidates) > 0 {
+			break
+		}
+	}
+
+	type scoredCard struct {
+		card  models.PokeTCGCard
+		score int
+	}
+	scored := []scoredCard{}
+	for _, card := range candidates {
+		score := scorePokeTCGCard(tokens, card)
+		if score > 0 {
+			scored = append(scored, scoredCard{card: card, score: score})
+		}
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].card.Name < scored[j].card.Name
+		}
+		return scored[i].score > scored[j].score
+	})
+
+	results := []models.PokeTCGCard{}
+	for _, item := range scored {
+		results = append(results, item.card)
+		if len(results) >= limit {
+			break
+		}
+	}
+	return results, nil
+}
+
+func (s *CardService) searchOfficialCollectorCandidates(ctx context.Context, query string, tokens []string, limit int) ([]models.PokeTCGCard, error) {
+	nameTokens := candidateSearchTokens(tokens)
+	if len(nameTokens) == 0 {
+		return []models.PokeTCGCard{}, nil
+	}
+	number, denominator := collectorNumbers(query)
+	if number == "" {
+		return []models.PokeTCGCard{}, nil
+	}
+
+	cards, err := s.fetchOfficialPokemonTCG(ctx, nameTokens[0], number, 50)
+	if err != nil {
+		return nil, err
+	}
+	type scoredCard struct {
+		card  models.PokeTCGCard
+		score int
+	}
+	scored := []scoredCard{}
+	for _, card := range cards {
+		score := scorePokeTCGCard(tokens, card)
+		if score == 0 {
+			continue
+		}
+		if denominator != "" && card.SetPrintedTotal == denominator {
+			score += 8
+		}
+		scored = append(scored, scoredCard{card: card, score: score})
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].card.ID < scored[j].card.ID
+		}
+		return scored[i].score > scored[j].score
+	})
+
+	results := []models.PokeTCGCard{}
+	for _, item := range scored {
+		results = append(results, item.card)
+		if len(results) >= limit {
+			break
+		}
+	}
+	return results, nil
+}
+
+func (s *CardService) fetchPokeTCG(ctx context.Context, query string, limit int) ([]models.PokeTCGCard, error) {
+	u, err := url.Parse(s.pokeTCGBaseURL + "/search")
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("q", query)
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("poketcg fallback search returned status %d", resp.StatusCode)
+	}
+	var payload struct {
+		Cards []models.PokeTCGCard `json:"cards"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if payload.Cards == nil {
+		return []models.PokeTCGCard{}, nil
+	}
+	return payload.Cards, nil
+}
+
+func (s *CardService) fetchOfficialPokemonTCG(ctx context.Context, cardName string, number string, limit int) ([]models.PokeTCGCard, error) {
+	u, err := url.Parse("https://api.pokemontcg.io/v2/cards")
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("q", fmt.Sprintf("name:\"%s\" number:\"%s\"", cardName, number))
+	q.Set("pageSize", fmt.Sprintf("%d", limit))
+	q.Set("orderBy", "name")
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 PokeAi/1.0")
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return []models.PokeTCGCard{}, nil
+	}
+
+	var payload officialPokemonTCGResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	cards := []models.PokeTCGCard{}
+	for _, card := range payload.Data {
+		cards = append(cards, card.toPokeTCGCard())
+	}
+	return cards, nil
+}
+
+func searchTokens(query string) []string {
+	normalized := normalizeSearchText(query)
+	normalized = strings.NewReplacer("-", " ", "/", " ", "#", " ").Replace(normalized)
+	parts := strings.Fields(normalized)
+	tokens := []string{}
+	for _, part := range parts {
+		if len(part) < 2 {
+			continue
+		}
+		tokens = append(tokens, part)
+	}
+	return tokens
+}
+
+func collectorNumbers(query string) (string, string) {
+	match := regexp.MustCompile(`(?i)\b(\d{1,4})\s*/\s*(\d{1,4})\b`).FindStringSubmatch(query)
+	if len(match) == 3 {
+		return match[1], match[2]
+	}
+	match = regexp.MustCompile(`(?i)\b(?:number|no\.?|#)\s*(\d{1,4})\b`).FindStringSubmatch(query)
+	if len(match) == 2 {
+		return match[1], ""
+	}
+	for _, token := range searchTokens(query) {
+		if isNumericToken(token) {
+			return token, ""
+		}
+	}
+	return "", ""
+}
+
+func candidateSearchTokens(tokens []string) []string {
+	searchTokens := []string{}
+	seen := map[string]bool{}
+	for _, token := range tokens {
+		if len(token) < 3 || isNumericToken(token) || isSetOnlyToken(token) || seen[token] {
+			continue
+		}
+		seen[token] = true
+		searchTokens = append(searchTokens, token)
+		if len(searchTokens) >= 2 {
+			break
+		}
+	}
+	return searchTokens
+}
+
+func isSetOnlyToken(token string) bool {
+	switch token {
+	case "pokemon", "pokémon", "card", "cards", "set", "series", "base", "promo", "promos":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeSearchText(value string) string {
+	return strings.NewReplacer(
+		"é", "e", "É", "e", "è", "e", "È", "e",
+		"—", " ", "–", " ",
+	).Replace(strings.ToLower(value))
+}
+
+func isScoringStopword(token string) bool {
+	switch token {
+	case "pokemon", "pokémon", "card", "cards", "set", "series", "promo", "promos":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNumericToken(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, ch := range token {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func scorePokeTCGCard(tokens []string, card models.PokeTCGCard) int {
+	name := normalizeSearchText(card.Name)
+	setName := normalizeSearchText(card.Set)
+	number := normalizeSearchText(card.Number)
+	score := 0
+	for _, token := range tokens {
+		switch {
+		case isScoringStopword(token):
+			continue
+		case token == number:
+			score += 4
+		case strings.Contains(name, token):
+			score += 5
+		case strings.Contains(setName, token):
+			score += 4
+		case isNumericToken(token):
+			continue
+		default:
+			return 0
+		}
+	}
+	if card.Market != nil {
+		score++
+	}
+	if card.CardmarketTrend != nil {
+		score++
+	}
+	return score
+}
+
+func (s *CardService) SearchEbayListings(ctx context.Context, cardName, externalCardID, setName, cardNumber, assetType, slabTier, languagePreference string, pages int, publish bool) ([]models.EbayLiveListing, error) {
 	if strings.TrimSpace(cardName) == "" {
 		return nil, ErrCardNameRequired
 	}
@@ -203,7 +506,7 @@ func (s *CardService) SearchEbayListings(ctx context.Context, cardName, external
 	q := u.Query()
 	q.Set("cardName", cardName)
 	q.Set("assetType", assetType)
-	q.Set("publish", "false")
+	q.Set("publish", fmt.Sprintf("%t", publish))
 	q.Set("languagePreference", normalizeLanguagePreference(languagePreference))
 	if pages <= 0 || pages > 5 {
 		pages = 2
@@ -214,6 +517,9 @@ func (s *CardService) SearchEbayListings(ctx context.Context, cardName, external
 	}
 	if setName != "" {
 		q.Set("setName", setName)
+	}
+	if cardNumber != "" {
+		q.Set("cardNumber", cardNumber)
 	}
 	if slabTier != "" {
 		q.Set("slabTier", slabTier)
@@ -231,6 +537,51 @@ func (s *CardService) SearchEbayListings(ctx context.Context, cardName, external
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("ebay live search returned status %d", resp.StatusCode)
+	}
+	var payload struct {
+		Listings []models.EbayLiveListing `json:"listings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if payload.Listings == nil {
+		payload.Listings = []models.EbayLiveListing{}
+	}
+	return payload.Listings, nil
+}
+
+func (s *CardService) ImportEbayListingText(ctx context.Context, request models.EbayTextImportRequest) ([]models.EbayLiveListing, error) {
+	if strings.TrimSpace(request.CardName) == "" {
+		return nil, ErrCardNameRequired
+	}
+	if strings.TrimSpace(request.Text) == "" {
+		return nil, fmt.Errorf("import text is required")
+	}
+	if request.AssetType == "" {
+		request.AssetType = "SLAB"
+	}
+	request.LanguagePreference = normalizeLanguagePreference(request.LanguagePreference)
+
+	u, err := url.Parse(s.apiConsumerURL + "/ebay/import-text")
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("ebay text import returned status %d", resp.StatusCode)
 	}
 	var payload struct {
 		Listings []models.EbayLiveListing `json:"listings"`
@@ -263,3 +614,88 @@ func (s *CardService) InvalidateTrendingCache(ctx context.Context) {
 // Cache the card detail: "card:"+cardID with 10-minute TTL
 // Why 10 minutes (shorter than trending)? User just searched for this card —
 // they expect relatively fresh price data on the detail page.
+
+type officialPokemonTCGResponse struct {
+	Data []officialPokemonTCGCard `json:"data"`
+}
+
+type officialPokemonTCGCard struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Number string `json:"number"`
+	Rarity string `json:"rarity"`
+	Set    struct {
+		Name         string `json:"name"`
+		Series       string `json:"series"`
+		PrintedTotal int    `json:"printedTotal"`
+	} `json:"set"`
+	Images struct {
+		Small string `json:"small"`
+		Large string `json:"large"`
+	} `json:"images"`
+	TCGPlayer *struct {
+		URL       string                        `json:"url"`
+		UpdatedAt string                        `json:"updatedAt"`
+		Prices    map[string]map[string]float64 `json:"prices"`
+	} `json:"tcgplayer"`
+	Cardmarket *struct {
+		URL       string `json:"url"`
+		UpdatedAt string `json:"updatedAt"`
+		Prices    struct {
+			TrendPrice *float64 `json:"trendPrice"`
+		} `json:"prices"`
+	} `json:"cardmarket"`
+}
+
+func (c officialPokemonTCGCard) toPokeTCGCard() models.PokeTCGCard {
+	image := c.Images.Large
+	if image == "" {
+		image = c.Images.Small
+	}
+	bestVariant, market := bestOfficialMarket(c)
+	result := models.PokeTCGCard{
+		ID:              c.ID,
+		Name:            c.Name,
+		Set:             c.Set.Name,
+		Series:          c.Set.Series,
+		Number:          c.Number,
+		Rarity:          c.Rarity,
+		Image:           image,
+		BestVariant:     bestVariant,
+		Market:          market,
+		SetPrintedTotal: fmt.Sprintf("%d", c.Set.PrintedTotal),
+	}
+	if c.TCGPlayer != nil {
+		result.TCGPlayerURL = c.TCGPlayer.URL
+		result.TCGPlayerUpdatedAt = c.TCGPlayer.UpdatedAt
+	}
+	if c.Cardmarket != nil {
+		result.CardmarketURL = c.Cardmarket.URL
+		result.CardmarketUpdatedAt = c.Cardmarket.UpdatedAt
+		result.CardmarketTrend = c.Cardmarket.Prices.TrendPrice
+	}
+	return result
+}
+
+func bestOfficialMarket(c officialPokemonTCGCard) (string, *float64) {
+	if c.TCGPlayer == nil {
+		return "-", nil
+	}
+	bestName := "-"
+	var bestValue *float64
+	for variant, fields := range c.TCGPlayer.Prices {
+		for _, key := range []string{"market", "mid", "low"} {
+			value, ok := fields[key]
+			if !ok || value <= 0 {
+				continue
+			}
+			if bestValue == nil || value > *bestValue {
+				copyValue := value
+				bestValue = &copyValue
+				bestName = variant
+			}
+			break
+		}
+	}
+	return bestName, bestValue
+}

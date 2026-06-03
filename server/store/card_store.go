@@ -185,22 +185,16 @@ func (s *postgresCardStore) GetSlabMarketSummary(ctx context.Context, externalCa
 			FROM card_listings
 			WHERE external_card_id = $1
 			  AND listing_title IS NOT NULL
-			  AND ($2 = 'BOTH' OR COALESCE(language_preference, 'BOTH') = $2)
-			  AND discovered_at >= NOW() - INTERVAL '7 days'
-			  AND COALESCE(NULLIF(slab_tier, ''), 'RAW') IN (
-				'RAW','PSA_10','PSA_9','PSA_8','PSA_7',
-				'CGC_10','CGC_9_5','CGC_9',
-				'BGS_10','BGS_9_5','BGS_9'
-			  )
+			  AND ($2 = 'BOTH' OR COALESCE(language_preference, 'BOTH') IN ($2, 'BOTH'))
+			  AND discovered_at >= NOW() - INTERVAL '7 days' 
 		)
 		SELECT slab_tier, price, listing_url, listing_id, listing_title, image_url, condition, language_preference, discovered_at, listing_count
 		FROM ranked
-		WHERE rn <= 5
 		ORDER BY CASE slab_tier
 			WHEN 'RAW' THEN 0
 			WHEN 'PSA_10' THEN 1 WHEN 'PSA_9' THEN 2 WHEN 'PSA_8' THEN 3 WHEN 'PSA_7' THEN 4
-			WHEN 'CGC_10' THEN 5 WHEN 'CGC_9_5' THEN 6 WHEN 'CGC_9' THEN 7
-			WHEN 'BGS_10' THEN 8 WHEN 'BGS_9_5' THEN 9 WHEN 'BGS_9' THEN 10
+			WHEN 'CGC_10' THEN 5 WHEN 'CGC_9_5' THEN 6 WHEN 'CGC_9' THEN 7 WHEN 'CGC_8_5' THEN 8 WHEN 'CGC_8' THEN 9 WHEN 'CGC_7_5' THEN 10 WHEN 'CGC_7' THEN 11
+			WHEN 'BGS_10' THEN 12 WHEN 'BGS_9_5' THEN 13 WHEN 'BGS_9' THEN 14 WHEN 'BGS_8_5' THEN 15 WHEN 'BGS_8' THEN 16 WHEN 'BGS_7_5' THEN 17 WHEN 'BGS_7' THEN 18
 			ELSE 99
 		END, price ASC, discovered_at DESC`,
 		externalCardID, normalizeLanguagePreference(languagePreference),
@@ -262,9 +256,29 @@ func slabTierLabel(tier string) string {
 		return "BGS 10"
 	case "BGS_9_5":
 		return "BGS 9.5"
+	case "CGC_8_5":
+		return "CGC 8.5"
+	case "CGC_8":
+		return "CGC 8"
+	case "CGC_7_5":
+		return "CGC 7.5"
+	case "CGC_7":
+		return "CGC 7"
+	case "BGS_8_5":
+		return "BGS 8.5"
+	case "BGS_8":
+		return "BGS 8"
+	case "BGS_7_5":
+		return "BGS 7.5"
+	case "BGS_7":
+		return "BGS 7"
 	case "BGS_9":
 		return "BGS 9"
 	default:
+		parts := strings.Split(tier, "_")
+		if len(parts) >= 2 && (parts[0] == "PSA" || parts[0] == "CGC" || parts[0] == "BGS") {
+			return parts[0] + " " + strings.Join(parts[1:], ".")
+		}
 		return tier
 	}
 }

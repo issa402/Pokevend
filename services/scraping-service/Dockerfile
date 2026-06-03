@@ -7,7 +7,7 @@ FROM golang:1.21-bookworm AS builder
 WORKDIR /app
 COPY . .
 RUN go mod tidy && go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -o scraper ./main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o main ./main.go
 
 FROM debian:bookworm-slim
 WORKDIR /app
@@ -18,9 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/scraper .
+COPY --from=builder /app/main .
 
 RUN useradd -m scrapeuser && chown -R scrapeuser /app
 USER scrapeuser
 
-CMD ["./scraper"]
+CMD ["./main"]

@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Download, Package, Plus, Search, Trash2, Upload, X } from 'lucide-react';
+import { Download, Package, Plus, Search, ShoppingBag, Trash2, Upload, X } from 'lucide-react';
 import api from '../services/api.js';
 import { setInventory, removeInventoryItem } from '../store/index.js';
 
@@ -36,6 +36,7 @@ export default function InventoryPage() {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [storeBusyId, setStoreBusyId] = useState('');
   const fileRef = useRef();
 
   const totals = useMemo(() => {
@@ -99,11 +100,11 @@ export default function InventoryPage() {
         rarity: selectedCard.rarity,
         imageUrl: selectedCard.image,
         marketUpdatedAt: selectedCard.tcgplayerUpdatedAt || selectedCard.cardmarketUpdatedAt || '',
-        priceSource: 'poketcg',
+        priceSource: selectedCard.market ? 'poketcg_tcgplayer' : (selectedCard.cardmarketTrend ? 'poketcg_cardmarket' : 'poketcg'),
         condition: form.condition,
         quantity: Number(form.quantity) || 1,
         purchasePrice: toNumberOrNull(form.purchasePrice),
-        currentValue: selectedCard.market ?? null,
+        currentValue: effectiveMarketPrice(selectedCard),
         notes: form.notes,
       });
       await refreshInventory();
@@ -119,6 +120,27 @@ export default function InventoryPage() {
   async function handleDelete(id) {
     await api.delete(`/inventory/${id}`);
     dispatch(removeInventoryItem(id));
+  }
+
+  async function handleAddToStore(item) {
+    const id = read(item, 'id');
+    const suggested = read(item, 'targetSalePrice', 'target_sale_price') ?? read(item, 'currentValue', 'current_value') ?? read(item, 'purchasePrice', 'purchase_price');
+    const rawPrice = window.prompt('Store price for this card', suggested ? Number(suggested).toFixed(2) : '');
+    if (rawPrice === null) return;
+    const storePrice = toNumberOrNull(rawPrice);
+    if (storePrice === null || storePrice <= 0) {
+      alert('Enter a valid store price');
+      return;
+    }
+    setStoreBusyId(id);
+    try {
+      await api.post(`/inventory/${id}/store-listing`, { storePrice });
+      await refreshInventory();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not mark card ready for store');
+    } finally {
+      setStoreBusyId('');
+    }
   }
 
   async function handleImport(e) {
@@ -184,7 +206,7 @@ export default function InventoryPage() {
                     <span style={{ minWidth:0 }}>
                       <span style={{ display:'block', fontWeight:700, fontSize:'0.875rem' }}>{card.name}</span>
                       <span style={{ display:'block', color:'var(--color-text-muted)', fontSize:'0.75rem' }}>{card.set} #{card.number}</span>
-                      <span className="price-tag" style={{ display:'block', fontSize:'0.9rem', marginTop:4 }}>{money(card.market)}</span>
+                      <span className="price-tag" style={{ display:'block', fontSize:'0.9rem', marginTop:4 }}>{money(effectiveMarketPrice(card))}</span>
                     </span>
                   </button>
                 );
@@ -202,7 +224,7 @@ export default function InventoryPage() {
               </div>
               <div style={{ textAlign:'right' }}>
                 <div style={{ color:'var(--color-text-muted)', fontSize:'0.75rem', marginBottom:4 }}>Market</div>
-                <div className="price-tag" style={{ fontSize:'1rem' }}>{selectedCard ? money(selectedCard.market) : '-'}</div>
+                <div className="price-tag" style={{ fontSize:'1rem' }}>{selectedCard ? money(effectiveMarketPrice(selectedCard)) : '-'}</div>
               </div>
             </div>
 
@@ -223,7 +245,7 @@ export default function InventoryPage() {
       {items.length > 0 ? (
         <div className="glass-card" style={{ overflow:'hidden' }}>
           <table className="data-table">
-            <thead><tr><th>Card</th><th>Condition</th><th>Qty</th><th>Paid</th><th>Market</th><th>Position</th><th>P&L</th><th></th></tr></thead>
+            <thead><tr><th>Card</th><th>Condition</th><th>Qty</th><th>Paid</th><th>Market</th><th>Position</th><th>P&L</th><th>Store</th><th></th></tr></thead>
             <tbody>
               {items.map(item => {
                 const cardName = read(item, 'cardName', 'card_name');
@@ -234,6 +256,8 @@ export default function InventoryPage() {
                 const current = Number(read(item, 'currentValue', 'current_value'));
                 const position = Number.isFinite(current) ? current * qty : null;
                 const pl = Number.isFinite(current) && Number.isFinite(paid) ? (current - paid) * qty : null;
+                const storeStatus = read(item, 'storeListingStatus', 'store_listing_status') || 'NOT_LISTED';
+                const storePrice = Number(read(item, 'storePrice', 'store_price'));
                 return (
                   <tr key={item.id}>
                     <td>
@@ -248,7 +272,18 @@ export default function InventoryPage() {
                     <td>{Number.isFinite(current) ? <strong style={{ color:'var(--color-accent-gold)' }}>{money(current)}</strong> : '-'}</td>
                     <td>{position != null ? money(position) : '-'}</td>
                     <td>{pl != null ? <span style={{ color: pl >= 0 ? 'var(--color-accent-rising)' : 'var(--color-accent-falling)', fontWeight:600 }}>{pl >= 0 ? '+' : ''}{money(pl)}</span> : '-'}</td>
-                    <td><button className="btn btn-icon btn-secondary" type="button" onClick={() => handleDelete(item.id)} title="Remove from inventory"><Trash2 size={14} color="var(--color-accent-falling)" /></button></td>
+                    <td>
+                      <div style={{ display:'flex', flexDirection:'column', gap:6, alignItems:'flex-start' }}>
+                        <span className="badge" style={{ color: storeStatus === 'SYNCED' ? 'var(--color-accent-rising)' : storeStatus === 'READY' ? 'var(--color-accent-gold)' : 'var(--color-text-muted)' }}>{storeStatus === 'NOT_LISTED' ? 'Not listed' : storeStatus}</span>
+                        {Number.isFinite(storePrice) && <span style={{ fontSize:'0.75rem', color:'var(--color-text-secondary)' }}>{money(storePrice)}</span>}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
+                        <button className="btn btn-icon btn-secondary" type="button" onClick={() => handleAddToStore(item)} disabled={storeBusyId === item.id} title="Add to store"><ShoppingBag size={14} /></button>
+                        <button className="btn btn-icon btn-secondary" type="button" onClick={() => handleDelete(item.id)} title="Remove from inventory"><Trash2 size={14} color="var(--color-accent-falling)" /></button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}

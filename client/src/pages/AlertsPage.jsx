@@ -35,7 +35,7 @@ export default function AlertsPage() {
         unreadCount: Array.isArray(data) ? newestFirst.filter(a => !(a.is_read || a.isRead)).length : data.unreadCount,
       }));
     });
-  }, [loadAlerts]);
+  }, [dispatch]);
 
   useEffect(() => {
     loadAlerts();
@@ -51,7 +51,7 @@ export default function AlertsPage() {
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnVisible);
     };
-  }, [dispatch]);
+  }, [loadAlerts]);
 
   async function handleMarkAllRead() {
     await api.put('/alerts/read-all');

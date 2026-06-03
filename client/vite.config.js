@@ -8,9 +8,10 @@ export default defineConfig({
     // Proxy API calls to the Node.js backend in dev (avoids CORS issues)
     proxy: {
       '/api': {
-        target:    'http://localhost:3001',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
     },
   },
 });
+

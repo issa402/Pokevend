@@ -6,7 +6,7 @@ import { NavLink } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
   LayoutDashboard, Star, TrendingUp, Package,
-  MapPin, Bell, Settings, Zap,
+  MapPin, Bell, Settings, Zap, Trophy,
 } from 'lucide-react';
 
 // Navigation items — icon, label, and path
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/watchlist', icon: Star,            label: 'Watchlist'  },
   { to: '/trends',    icon: TrendingUp,      label: 'Trends'     },
   { to: '/inventory', icon: Package,         label: 'Inventory'  },
+  { to: '/finder', icon: Trophy, label: 'Finder' },
   { to: '/shows',     icon: MapPin,          label: 'Shows'      },
   { to: '/alerts',    icon: Bell,            label: 'Alerts'     },
   { to: '/settings',  icon: Settings,        label: 'Settings'   },

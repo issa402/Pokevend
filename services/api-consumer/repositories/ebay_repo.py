@@ -123,7 +123,7 @@ class EbayRepo:
                     headers={"Authorization": f"Bearer {token}"},
                     # params= = URL query parameters (?q=...&limit=...&filter=...)
                     params={
-                        "q": f"{card_name} pokemon card", # Slightly better keyword order
+                        "q": _marketplace_query(card_name),
                         "limit": page_limit,
                         "offset": page * page_limit,
                         "filter": "categoryIds:{183454},buyingOptions:{FIXED_PRICE}",
@@ -158,3 +158,13 @@ class EbayRepo:
 # This makes the service resilient to temporary eBay API issues.
 # Research: "exponential backoff with jitter" — FAANG standard for retries
 # ============================================================
+
+
+def _marketplace_query(query: str) -> str:
+    value = " ".join((query or "").split())
+    lowered = value.lower()
+    if any(term in lowered for term in ("psa", "cgc", "bgs", "graded", "/", "#")):
+        return value
+    if "pokemon" in lowered or "pokémon" in lowered:
+        return value
+    return f"{value} pokemon card"

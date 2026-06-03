@@ -52,6 +52,7 @@ logger = logging.getLogger(__name__)
 # models → repositories → analyzers (each depends on the ones above)
 from analyzers.trend_analyzer import TrendAnalyzer
 from analyzers.deal_finder import DealFinder
+from analyzers.slab_opportunity_finder import SlabOpportunityFinder
 from repositories.card_repo import CardRepo
 from repositories.listing_repo import ListingRepo
 
@@ -65,6 +66,7 @@ listing_repo = ListingRepo()
 # Inject repos into analyzers — analyzers never create repos internally
 trend_analyzer = TrendAnalyzer(repo=card_repo)
 deal_finder    = DealFinder(card_repo=card_repo, listing_repo=listing_repo)
+slab_opportunity_finder = SlabOpportunityFinder(listing_repo=listing_repo)
 
 
 def run_trend_analysis():
@@ -97,16 +99,28 @@ def run_deal_finder():
         logger.error(f"Deal finder failed: {e}")
 
 
+def run_slab_opportunity_finder():
+    """Wrapper for wholesale slab opportunity scoring."""
+    logger.info("Running slab opportunity finder...")
+    try:
+        opportunities = slab_opportunity_finder.run()
+        logger.info(f"✓ {len(opportunities)} slab opportunities scored")
+    except Exception as e:
+        logger.error(f"Slab opportunity finder failed: {e}")
+
+
 if __name__ == "__main__":
     # Read configuration from environment variables
     # The schedule is configurable without code changes — DevOps can tune it
     trend_interval = int(os.getenv("TREND_ANALYSIS_INTERVAL_HOURS", "1"))
     deal_hour      = int(os.getenv("DEAL_OF_DAY_HOUR", "6"))
+    slab_interval_minutes = int(os.getenv("SLAB_OPPORTUNITY_INTERVAL_MINUTES", str(int(os.getenv("SLAB_OPPORTUNITY_INTERVAL_HOURS", "1")) * 60)))
 
     # Run immediately on startup — don't wait for first scheduled time
     # This ensures the dashboard has data immediately after deployment
     run_trend_analysis()
     run_deal_finder()
+    run_slab_opportunity_finder()
 
     # schedule library API:
     # schedule.every(N).hours.do(function) = run function every N hours
@@ -114,11 +128,13 @@ if __name__ == "__main__":
     schedule.every(trend_interval).hours.do(run_trend_analysis)
     # f"{deal_hour:02d}:00" = zero-padded 2-digit hour: 6 → "06:00"
     schedule.every().day.at(f"{deal_hour:02d}:00").do(run_deal_finder)
+    schedule.every(slab_interval_minutes).minutes.do(run_slab_opportunity_finder)
 
     logger.info(
         f"✓ Analytics engine running | "
         f"Trends: every {trend_interval}h | "
-        f"Deals: daily at {deal_hour:02d}:00"
+        f"Deals: daily at {deal_hour:02d}:00 | "
+        f"Slab opportunities: every {slab_interval_minutes}m"
     )
 
     # THE SCHEDULER LOOP:

@@ -1,0 +1,13 @@
+{
+  "targets": [
+    {
+      "enabled": true,
+      "title": "Armored Mewtwo #SM228",
+      "setName": "Pokemon Promo",
+      "priceChartingUrl": "https://www.pricecharting.com/game/pokemon-promo/armored-mewtwo-sm228",
+      "targetSlabTier": "PSA_10",
+      "requiredTerms": ["armored", "mewtwo"],
+      "identityTerms": ["sm228"]
+    }
+  ]
+}

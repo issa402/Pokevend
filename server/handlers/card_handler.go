@@ -28,6 +28,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -173,13 +174,40 @@ func (h *CardHandler) EbayListings(w http.ResponseWriter, r *http.Request) {
 		cardName,
 		r.URL.Query().Get("externalCardId"),
 		r.URL.Query().Get("setName"),
+		r.URL.Query().Get("cardNumber"),
 		r.URL.Query().Get("assetType"),
 		r.URL.Query().Get("slabTier"),
 		r.URL.Query().Get("languagePreference"),
 		intQuery(r, "pages", 2, 1, 5),
+		r.URL.Query().Get("publish") == "true",
 	)
 	if err != nil {
 		pkg.Error(w, http.StatusBadGateway, "ebay listing search failed")
+		return
+	}
+	pkg.JSON(w, http.StatusOK, map[string]interface{}{
+		"count":    len(listings),
+		"listings": listings,
+	})
+}
+
+func (h *CardHandler) ImportEbayText(w http.ResponseWriter, r *http.Request) {
+	var request models.EbayTextImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		pkg.Error(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if request.CardName == "" {
+		pkg.Error(w, http.StatusBadRequest, "cardName is required")
+		return
+	}
+	if request.Text == "" {
+		pkg.Error(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	listings, err := h.svc.ImportEbayListingText(r.Context(), request)
+	if err != nil {
+		pkg.Error(w, http.StatusBadGateway, "ebay text import failed")
 		return
 	}
 	pkg.JSON(w, http.StatusOK, map[string]interface{}{

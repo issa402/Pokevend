@@ -1,0 +1,24 @@
+{
+  "sources": [
+    {
+      "name": "armored-mewtwo-psa10-example",
+      "enabled": false,
+      "url": "https://example.com/approved-sold-comps-page",
+      "marketplace": "example_sold",
+      "cardName": "Armored Mewtwo",
+      "setName": "SM Black Star Promos",
+      "externalCardId": "smp-SM228",
+      "grader": "PSA",
+      "grade": "10",
+      "slabTier": "PSA_10",
+      "languagePreference": "ANY",
+      "selectors": {
+        "row": ".sold-row",
+        "title": ".title::text",
+        "price": ".price::text",
+        "soldAt": ".sold-date::text",
+        "link": "a"
+      }
+    }
+  ]
+}

@@ -98,6 +98,18 @@ type SlabListing struct {
 	LanguagePreference string     `json:"languagePreference"`
 }
 
+type EbayTextImportRequest struct {
+	CardName           string `json:"cardName"`
+	ExternalCardID     string `json:"externalCardId"`
+	SetName            string `json:"setName"`
+	CardNumber         string `json:"cardNumber"`
+	AssetType          string `json:"assetType"`
+	SlabTier           string `json:"slabTier"`
+	LanguagePreference string `json:"languagePreference"`
+	Publish            bool   `json:"publish"`
+	Text               string `json:"text"`
+}
+
 type EbayLiveListing struct {
 	CardName           string  `json:"card_name"`
 	ExternalCardID     *string `json:"external_card_id"`
@@ -136,6 +148,7 @@ type PokeTCGCard struct {
 	Name                string   `json:"name"`
 	Set                 string   `json:"set"`
 	Series              string   `json:"series"`
+	SetPrintedTotal     string   `json:"setPrintedTotal,omitempty"`
 	Number              string   `json:"number"`
 	Rarity              string   `json:"rarity"`
 	Image               string   `json:"image"`

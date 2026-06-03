@@ -47,6 +47,12 @@ func (h *InventoryHandler) Add(w http.ResponseWriter, r *http.Request) {
 		PurchasePrice   *float64 `json:"purchasePrice"`
 		CurrentValue    *float64 `json:"currentValue"`
 		Notes           string   `json:"notes"`
+		AssetType       string   `json:"assetType"`
+		Grader          string   `json:"grader"`
+		Grade           string   `json:"grade"`
+		SlabTier        string   `json:"slabTier"`
+		CertNumber      string   `json:"certNumber"`
+		TargetSalePrice *float64 `json:"targetSalePrice"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CardName == "" {
 		pkg.Error(w, http.StatusBadRequest, "cardName is required")
@@ -83,6 +89,22 @@ func (h *InventoryHandler) Add(w http.ResponseWriter, r *http.Request) {
 	if body.Notes != "" {
 		item.Notes = &body.Notes
 	}
+	if body.AssetType != "" {
+		item.AssetType = &body.AssetType
+	}
+	if body.Grader != "" {
+		item.Grader = &body.Grader
+	}
+	if body.Grade != "" {
+		item.Grade = &body.Grade
+	}
+	if body.SlabTier != "" {
+		item.SlabTier = &body.SlabTier
+	}
+	if body.CertNumber != "" {
+		item.CertNumber = &body.CertNumber
+	}
+	item.TargetSalePrice = body.TargetSalePrice
 
 	id, err := h.svc.Add(r.Context(), item)
 	if err != nil {
@@ -96,6 +118,21 @@ func (h *InventoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r)
 	h.svc.Delete(r.Context(), chi.URLParam(r, "id"), user.ID)
 	pkg.JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func (h *InventoryHandler) MarkReadyForStore(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r)
+	var body models.StoreListingInput
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		pkg.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	item, err := h.svc.MarkReadyForStore(r.Context(), chi.URLParam(r, "id"), user.ID, body)
+	if err != nil {
+		pkg.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pkg.JSON(w, http.StatusOK, map[string]interface{}{"message": "ready_for_store", "inventoryItem": item})
 }
 
 func (h *InventoryHandler) Import(w http.ResponseWriter, r *http.Request) {
