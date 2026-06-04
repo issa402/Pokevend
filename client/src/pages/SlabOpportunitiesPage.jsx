@@ -258,9 +258,15 @@ export default function SlabOpportunitiesPage() {
   );
 }
 
+function hasMeaningfulResearch(metric, tab) {
+  if (!metric) return false;
+  if (Number(metric.totalListings || 0) > 0 || Number(metric.avgListingPrice || 0) > 0) return true;
+  return tab === "SOLD" ? Number(metric.avgBids || 0) > 0 : Number(metric.avgWatchers || 0) > 0;
+}
+
 function SellerHubStrip({ metrics }) {
-  const active = metrics?.active;
-  const sold = metrics?.sold;
+  const active = hasMeaningfulResearch(metrics?.active, "ACTIVE") ? metrics.active : null;
+  const sold = hasMeaningfulResearch(metrics?.sold, "SOLD") ? metrics.sold : null;
   if (!active && !sold) return null;
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>

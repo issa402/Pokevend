@@ -12,6 +12,7 @@ from repositories.seller_hub_research_repo import SellerHubResearchRepo
 from repositories.slab_comp_repo import get_connection
 from services.live_slab_research import load_pokemon_env
 from services.seller_hub_research import research_one_grade
+from services.vendor_opportunity_alerts import create_vendor_opportunity_alerts
 
 logger = logging.getLogger("seller_hub_research_batch")
 
@@ -98,7 +99,8 @@ async def research_cycle(limit: int, tabs: list[str], day_range: int, headless: 
                 failed += 1
                 logger.warning("Seller Hub research failed for %s %s %s: %s", target.card_name, target.slab_tier, tab, exc)
             await asyncio.sleep(1)
-    return {"targets": len(targets), "attempted": len(targets) * len(tabs), "persisted": persisted, "failed": failed}
+    alerts = create_vendor_opportunity_alerts()
+    return {"targets": len(targets), "attempted": len(targets) * len(tabs), "persisted": persisted, "failed": failed, "alerts": alerts}
 
 
 async def run(args: argparse.Namespace) -> None:
