@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"time"
 
 	"pokemontool/models"
 
@@ -68,6 +70,12 @@ func (s *postgresSlabOpportunityStore) List(ctx context.Context, filters models.
 		}
 		opportunities = append(opportunities, opportunity)
 	}
+	sort.SliceStable(opportunities, func(i, j int) bool {
+		if opportunities[i].VendorInsight.OpportunityScore == opportunities[j].VendorInsight.OpportunityScore {
+			return opportunities[i].DealScore > opportunities[j].DealScore
+		}
+		return opportunities[i].VendorInsight.OpportunityScore > opportunities[j].VendorInsight.OpportunityScore
+	})
 	return opportunities, rows.Err()
 }
 
@@ -173,6 +181,7 @@ func scanSlabOpportunity(row slabOpportunityRow) (models.SlabOpportunity, error)
 	opportunity.Evidence = evidence
 	opportunity.SellerHubMetrics = sellerHubMetrics
 	applySellerHubScoreAdjustments(&opportunity)
+	opportunity.VendorInsight = buildVendorInsight(opportunity, time.Now())
 	return opportunity, nil
 }
 
@@ -182,12 +191,13 @@ type sellerHubMetricsPayload struct {
 }
 
 type sellerHubMetric struct {
-	TotalListings   *int     `json:"totalListings"`
-	AvgWatchers     *float64 `json:"avgWatchers"`
-	MaxWatchers     *int     `json:"maxWatchers"`
-	AvgBids         *float64 `json:"avgBids"`
-	MaxBids         *int     `json:"maxBids"`
-	AvgListingPrice *float64 `json:"avgListingPrice"`
+	TotalListings   *int       `json:"totalListings"`
+	AvgWatchers     *float64   `json:"avgWatchers"`
+	MaxWatchers     *int       `json:"maxWatchers"`
+	AvgBids         *float64   `json:"avgBids"`
+	MaxBids         *int       `json:"maxBids"`
+	AvgListingPrice *float64   `json:"avgListingPrice"`
+	ResearchedAt    *time.Time `json:"researchedAt"`
 }
 
 func applySellerHubScoreAdjustments(opportunity *models.SlabOpportunity) {
@@ -256,6 +266,13 @@ func clampInt(value, minValue, maxValue int) int {
 		return maxValue
 	}
 	return value
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func minInt(a, b int) int {

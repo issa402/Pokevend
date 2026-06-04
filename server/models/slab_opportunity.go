@@ -32,9 +32,27 @@ type SlabOpportunity struct {
 	Reason               *string         `json:"reason"`
 	Evidence             json.RawMessage `json:"evidence"`
 	SellerHubMetrics     json.RawMessage `json:"sellerHubMetrics"`
+	VendorInsight        VendorInsight   `json:"vendorInsight"`
 	ApprovedInventoryID  *string         `json:"approvedInventoryId"`
 	CreatedAt            time.Time       `json:"createdAt"`
 	UpdatedAt            time.Time       `json:"updatedAt"`
+}
+
+type VendorInsight struct {
+	Action            string   `json:"action"`
+	ActionReason      string   `json:"actionReason"`
+	OpportunityScore  int      `json:"opportunityScore"`
+	DemandScore       int      `json:"demandScore"`
+	PriceScore        int      `json:"priceScore"`
+	EvidenceScore     int      `json:"evidenceScore"`
+	SellThroughRate   *float64 `json:"sellThroughRate"`
+	PriceEdgePct      *float64 `json:"priceEdgePct"`
+	TargetListPrice   float64  `json:"targetListPrice"`
+	BenchmarkSource   string   `json:"benchmarkSource"`
+	SellerHubStale    bool     `json:"sellerHubStale"`
+	HasExactListing   bool     `json:"hasExactListing"`
+	HasActiveResearch bool     `json:"hasActiveResearch"`
+	HasSoldResearch   bool     `json:"hasSoldResearch"`
 }
 
 type SlabOpportunityFilters struct {
