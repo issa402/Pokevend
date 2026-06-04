@@ -27,6 +27,9 @@ func TestBuildVendorInsightRequiresMeaningfulSoldEvidenceForSourceNow(t *testing
 	if insight.HasSoldResearch {
 		t.Fatal("empty sold snapshot must not count as sold research")
 	}
+	if insight.OpportunityScore > 69 {
+		t.Fatalf("missing sold evidence must cap score below source-now tier, got %d", insight.OpportunityScore)
+	}
 	if insight.Action == "SOURCE_NOW" {
 		t.Fatal("reference value alone must not produce SOURCE_NOW")
 	}

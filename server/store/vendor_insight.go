@@ -48,6 +48,9 @@ func buildVendorInsight(opportunity models.SlabOpportunity, now time.Time) model
 		0,
 		100,
 	)
+	if !insight.HasSoldResearch {
+		insight.OpportunityScore = minInt(insight.OpportunityScore, 69)
+	}
 
 	switch {
 	case !insight.HasExactListing:
