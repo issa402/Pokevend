@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Filter, RefreshCw, ShieldCheck, ThumbsDown, Trophy, Zap } from 'lucide-react';
 import api from '../services/api.js';
+import VendorInsightPanel, { VendorActionBadge } from '../components/VendorInsightPanel.jsx';
 
 const graders = ['', 'PSA', 'CGC', 'BGS'];
 const tiers = ['', 'PSA_10', 'PSA_9', 'CGC_10', 'CGC_9_5', 'BGS_10', 'BGS_BLACK_LABEL'];
@@ -41,6 +42,12 @@ function compactNumber(value, suffix = '') {
   const number = Number(value);
   if (!Number.isFinite(number)) return '-';
   return `${Number.isInteger(number) ? number : number.toFixed(1)}${suffix}`;
+}
+
+function percent(value) {
+  if (value === null || value === undefined || value === '') return '-';
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(1) + '%' : '-';
 }
 
 function shortDate(value) {
@@ -134,7 +141,7 @@ export default function SlabOpportunitiesPage() {
           <div>
             <div className="section-title"><Trophy size={20} className="icon" /> Finder</div>
             <p style={{ color: 'var(--color-text-muted)', margin: '8px 0 0', maxWidth: 780 }}>
-              Market-discovered slab recommendations from Scrapling/PriceCharting movers plus live eBay asks. This is independent of your watchlist and shows the target buy price needed for a real flip.
+              Card-and-grade-specific sourcing decisions from exact eBay listings, sold-market pricing, active competition, watchers, bids, trend, fees, and margin.
             </p>
             {refreshSummary && (
               <p style={{ color: 'var(--color-text-muted)', margin: '8px 0 0', fontSize: '0.78rem' }}>
@@ -212,12 +219,11 @@ export default function SlabOpportunitiesPage() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
               <span className="badge badge-gold">{item.slabTier || 'Slab'}</span>
               <span className="badge">{item.marketplace || 'marketplace'}</span>
-              <span className="badge" style={{ color: signalColor(item) }}>{signalLabel(item)}</span>
-              <span className="badge" style={{ color: scoreColor(item.dealScore) }}>Score {item.dealScore}</span>
+              <VendorActionBadge insight={item.vendorInsight} />
             </div>
             <div style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 4 }}>{item.cardName}</div>
             <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', marginBottom: 8 }}>{item.title || item.setName || 'No listing title captured'}</div>
-            <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>{item.reason}</div>
+            <VendorInsightPanel insight={item.vendorInsight} />
             {evidenceOf(item).referenceUrl && (
               <a href={evidenceOf(item).referenceUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', marginTop: 8, color: 'var(--color-accent-gold)', fontSize: '0.78rem' }}>Reference source</a>
             )}
@@ -231,12 +237,14 @@ export default function SlabOpportunitiesPage() {
             <Metric label="Market value" value={money(item.estimatedMarketValue)} />
             <Metric label="Profit" value={money(item.expectedProfit)} strong />
             <Metric label="Margin" value={`${Number(item.expectedMarginPct || 0).toFixed(1)}%`} strong />
-            <Metric label="Confidence" value={`${item.confidenceScore}/100`} />
-            <Metric label="Risk" value={`${item.riskScore}/100`} />
+            <Metric label="Sell-through proxy" value={percent(item.vendorInsight?.sellThroughRate)} />
+            <Metric label="Price edge" value={percent(item.vendorInsight?.priceEdgePct)} />
+            <Metric label="Demand" value={(item.vendorInsight?.demandScore || 0) + '/25'} />
+            <Metric label="Target list" value={money(item.vendorInsight?.targetListPrice)} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 150 }}>
-            {item.listingUrl && <a className="btn btn-secondary btn-sm" href={item.listingUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {evidenceOf(item).needsEbayScan ? 'Search eBay' : 'Listing'}</a>}
+            {item.listingUrl && <a className="btn btn-secondary btn-sm" href={item.listingUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {evidenceOf(item).needsEbayScan ? 'Find exact listing' : 'Open exact listing'}</a>}
             <button className="btn btn-primary btn-sm" disabled={busyId === item.id || item.decision === 'approved' || evidenceOf(item).needsEbayScan} onClick={() => decide(item.id, 'approve')} title={evidenceOf(item).needsEbayScan ? 'Find a real eBay listing before approving' : ''}>
               <ShieldCheck size={14} /> Approve
             </button>

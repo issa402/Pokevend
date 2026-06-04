@@ -1,0 +1,14 @@
+[Unit]
+Description=PokemonTool authenticated eBay Seller Hub research
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/iscjmz/shopify/shopify/Pokemon
+ExecStart=/home/iscjmz/shopify/shopify/Pokemon/scripts/run_seller_hub_automation.sh --limit 10 --tabs ACTIVE,SOLD --interval-minutes 240
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

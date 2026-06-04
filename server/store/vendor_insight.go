@@ -20,8 +20,8 @@ func buildVendorInsight(opportunity models.SlabOpportunity, now time.Time) model
 
 	insight := models.VendorInsight{
 		HasExactListing:   !evidence.NeedsEbayScan && opportunity.AskingPrice > 0,
-		HasActiveResearch: metrics.Active != nil,
-		HasSoldResearch:   metrics.Sold != nil,
+		HasActiveResearch: hasMeaningfulActiveResearch(metrics.Active),
+		HasSoldResearch:   hasMeaningfulSoldResearch(metrics.Sold),
 		TargetListPrice:   opportunity.EstimatedMarketValue,
 		BenchmarkSource:   "reference market value",
 	}
@@ -59,7 +59,7 @@ func buildVendorInsight(opportunity models.SlabOpportunity, now time.Time) model
 	case insight.SellerHubStale:
 		insight.Action = "REFRESH_RESEARCH"
 		insight.ActionReason = "The listing has positive economics, but Seller Hub demand evidence is stale."
-	case insight.OpportunityScore >= 70 && opportunity.ExpectedMarginPct >= 20 && insight.EvidenceScore >= 10:
+	case insight.OpportunityScore >= 70 && opportunity.ExpectedMarginPct >= 20 && insight.EvidenceScore >= 10 && insight.HasSoldResearch:
 		insight.Action = "SOURCE_NOW"
 		insight.ActionReason = "Exact listing, strong margin, and fresh marketplace demand support a sourcing decision."
 	case insight.OpportunityScore >= 55:
@@ -70,6 +70,20 @@ func buildVendorInsight(opportunity models.SlabOpportunity, now time.Time) model
 		insight.ActionReason = "Keep monitoring until price, demand, or evidence quality improves."
 	}
 	return insight
+}
+
+func hasMeaningfulActiveResearch(metric *sellerHubMetric) bool {
+	return metric != nil &&
+		((metric.TotalListings != nil && *metric.TotalListings > 0) ||
+			(metric.AvgWatchers != nil && *metric.AvgWatchers > 0) ||
+			(metric.AvgListingPrice != nil && *metric.AvgListingPrice > 0))
+}
+
+func hasMeaningfulSoldResearch(metric *sellerHubMetric) bool {
+	return metric != nil &&
+		((metric.TotalListings != nil && *metric.TotalListings > 0) ||
+			(metric.AvgBids != nil && *metric.AvgBids > 0) ||
+			(metric.AvgListingPrice != nil && *metric.AvgListingPrice > 0))
 }
 
 func sellThroughProxy(active, sold *sellerHubMetric) *float64 {
