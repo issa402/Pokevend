@@ -97,3 +97,6 @@ secerets.txt
 # --- Local analysis/cache artifacts ---
 .understand-anything/
 *.save
+# --- Generated market pulse reports ---
+reports/last30days/
+

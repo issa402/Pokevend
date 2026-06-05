@@ -1,5 +1,7 @@
 services:
   postgres:
-    ports: !reset []
+    # Host-side Seller Hub research uses the authenticated local browser profile.
+    ports: !override
+      - "127.0.0.1:55433:5432"
   scraping-service:
     command: ["./main"]

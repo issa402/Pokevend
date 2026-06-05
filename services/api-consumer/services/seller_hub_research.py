@@ -18,7 +18,13 @@ from urllib.parse import urlencode
 
 from services.slab_parser import parse_slab
 
-DEFAULT_PROFILE_DIR = Path(__file__).resolve().parents[3] / ".local" / "ebay-seller-hub-profile"
+def _default_profile_dir(module_file: Path) -> Path:
+    parents = module_file.resolve().parents
+    project_root = parents[3] if len(parents) > 3 else parents[1]
+    return project_root / ".local" / "ebay-seller-hub-profile"
+
+
+DEFAULT_PROFILE_DIR = _default_profile_dir(Path(__file__))
 SELLER_HUB_RESEARCH_URL = "https://www.ebay.com/sh/research"
 LOGIN_BROWSER_ARGS = [
     "--disable-blink-features=AutomationControlled",

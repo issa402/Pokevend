@@ -113,6 +113,11 @@ services:
         condition: service_healthy
     environment:
       - POKETCG_BASE_URL=http://poketcg:8765
+      - API_CONSUMER_BASE_URL=http://api-consumer:8001
+      - ODOO_URL=http://shopify-odoo:8069
+    networks:
+      - default
+      - odoo-bridge
 
   # ----------------------------------------------------------
   # Python API Consumer — eBay + TCGplayer data ingestion
@@ -232,6 +237,11 @@ services:
 # ----------------------------------------------------------
 # Named volumes for persistent data
 # ----------------------------------------------------------
+networks:
+  odoo-bridge:
+    external: true
+    name: pokemon-odoo-bridge
+
 volumes:
   pgdata:
     external: true

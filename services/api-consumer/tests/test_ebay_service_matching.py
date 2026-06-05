@@ -1,7 +1,15 @@
 import unittest
+from pathlib import Path
 
-from repositories.ebay_repo import _marketplace_query
+from repositories.ebay_repo import _env_file_candidates, _marketplace_query
 from services.ebay_service import EbayService, _matches_card_number, _matches_set
+
+
+class EnvFileCandidatesTest(unittest.TestCase):
+    def test_shallow_container_path_does_not_require_missing_parent(self):
+        candidates = _env_file_candidates(Path("/app/repositories/ebay_repo.py"))
+
+        self.assertEqual(candidates, [Path("/app/.env")])
 
 
 class FakeRepo:

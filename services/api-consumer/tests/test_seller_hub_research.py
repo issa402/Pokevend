@@ -1,6 +1,7 @@
 from unittest import TestCase, main
+from pathlib import Path
 
-from services.seller_hub_research import build_keywords, parse_research_text, research_url
+from services.seller_hub_research import _default_profile_dir, build_keywords, parse_research_text, research_url
 
 
 SELLER_HUB_TEXT = """
@@ -48,6 +49,12 @@ May 31, 2026
 
 
 class SellerHubResearchTest(TestCase):
+    def test_default_profile_dir_supports_shallow_container_path(self):
+        self.assertEqual(
+            _default_profile_dir(Path("/app/services/seller_hub_research.py")),
+            Path("/app/.local/ebay-seller-hub-profile"),
+        )
+
     def test_build_keywords_includes_number_set_and_grade(self):
         self.assertEqual(
             build_keywords("Gengar & Mimikyu GX", "Team Up", "165", "PSA_10"),

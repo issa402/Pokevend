@@ -36,11 +36,17 @@ from dotenv import load_dotenv
 from typing import Any, Dict, Optional
 
 
+def _env_file_candidates(repo_file: Path) -> list[Path]:
+    parents = repo_file.resolve().parents
+    candidates = [parents[1] / ".env"]
+    if len(parents) > 3:
+        candidates.append(parents[3] / ".env")
+    return candidates
+
+
 def _load_env_files() -> None:
-    service_env = Path(__file__).resolve().parents[1] / ".env"
-    app_env = Path(__file__).resolve().parents[3] / ".env"
-    load_dotenv(service_env, override=False)
-    load_dotenv(app_env, override=False)
+    for env_file in _env_file_candidates(Path(__file__)):
+        load_dotenv(env_file, override=False)
 
 
 _load_env_files()

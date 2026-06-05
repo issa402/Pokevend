@@ -12,4 +12,4 @@ tcgdex-sdk==2.2.1
 # Adaptive scraping for sold comps/listing ingestion. BSD-3-Clause.
 scrapling[fetchers]==0.4.7
 psycopg2-binary==2.9.9
-playwright==1.54.0
+playwright==1.58.0

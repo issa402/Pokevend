@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from repositories.ebay_repo import EbayRepo
+from repositories.ebay_repo import EbayRepo, _env_file_candidates
 from services.pricecharting_market import PriceChartingMover, fetch_big_movers, fetch_grade_prices, money_to_float
 
 BLOCKED_TITLE_TERMS = (
@@ -288,7 +288,8 @@ class LiveSlabResearcher:
 
 
 def load_pokemon_env() -> None:
-    load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+    for env_file in _env_file_candidates(Path(__file__)):
+        load_dotenv(env_file, override=False)
 
 
 async def run_live_research(mover_limit: int = 10, min_profit: float = 25.0, min_margin_pct: float = 20.0, target_config: str | Path | None = None, include_sell_research: bool = True) -> list[LiveSlabCandidate]:
