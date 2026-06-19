@@ -61,11 +61,10 @@ func main() {
 	log.Println("🕷️  PokémonTool Scraping Service starting...")
 
 	// ── Playwright Setup ──────────────────────────────────────
-	// playwright.Install() downloads Chromium browser binaries if not present.
-	// This installs to ~/.cache/ms-playwright/ (or Docker's equivalent).
-	// In Dockerfile: RUN go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
-	// (installs in Docker layer — only runs once per build)
-	if err := playwright.Install(); err != nil {
+	// playwright.Install() downloads browser binaries if not present.
+	// The scrapers only launch Chromium, so do not download Firefox/WebKit.
+	// This keeps container startup faster and avoids unnecessary network/CPU churn.
+	if err := playwright.Install(&playwright.RunOptions{Browsers: []string{"chromium"}}); err != nil {
 		// log.Fatalf = log.Printf + os.Exit(1) — fatal means unrecoverable
 		log.Fatalf("Playwright install failed: %v", err)
 	}

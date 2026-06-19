@@ -11,25 +11,28 @@
 //   - Browser = radio listener (receives, doesn't send back)
 //
 // SSE vs WebSocket:
-//   SSE: simpler, one-way (server → client), built on HTTP, auto-reconnects
-//   WebSocket: two-way (client ↔ server), custom protocol, more complex
-//   Use SSE when: you only need server → client (price alerts ✅)
-//   Use WebSocket when: you need bidirectional (chat, games)
+//
+//	SSE: simpler, one-way (server → client), built on HTTP, auto-reconnects
+//	WebSocket: two-way (client ↔ server), custom protocol, more complex
+//	Use SSE when: you only need server → client (price alerts ✅)
+//	Use WebSocket when: you need bidirectional (chat, games)
 //
 // HOW OUR SSE WORKS:
-//   1. Browser opens: GET /api/stream?token=<jwt>
-//   2. SSEManager registers the connection as a named SSEClient
-//   3. Go's notification worker calls mgr.SendToUser(userID, jsonMsg)
-//   4. SSEManager finds all connections for that user, sends the message
-//   5. Browser's EventSource receives it and updates the UI
+//  1. Browser opens: GET /api/stream?token=<jwt>
+//  2. SSEManager registers the connection as a named SSEClient
+//  3. Go's notification worker calls mgr.SendToUser(userID, jsonMsg)
+//  4. SSEManager finds all connections for that user, sends the message
+//  5. Browser's EventSource receives it and updates the UI
 //
 // FAANG CONCEPT: Fan-out pattern
 // One event can go to MULTIPLE connections for the same user
 // (e.g., user has app open in 3 browser tabs → all 3 get the alert)
 //
 // GO CONCEPTS:
-//   sync.RWMutex (read-write lock), channels (chan string),
-//   http.Flusher interface, r.Context().Done(), goroutine lifecycle
+//
+//	sync.RWMutex (read-write lock), channels (chan string),
+//	http.Flusher interface, r.Context().Done(), goroutine lifecycle
+//
 // ============================================================
 package handlers
 
@@ -37,6 +40,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"pokemontool/config"
 	"pokemontool/middleware"
@@ -47,7 +51,7 @@ import (
 // Each user can have multiple SSEClient instances (multiple tabs).
 type SSEClient struct {
 	UserID string      // which user owns this connection
-	Send   chan string  // the channel to send JSON messages into
+	Send   chan string // the channel to send JSON messages into
 	// Channel: a Go built-in for safe communication between goroutines
 	// Think of it like a pipe: one goroutine writes in, another reads out
 }
@@ -62,7 +66,7 @@ type SSEClient struct {
 //   - Multiple goroutines can READ (SendToUser) simultaneously
 //   - Only ONE goroutine can WRITE (Add/Remove) at a time
 type SSEManager struct {
-	mu      sync.RWMutex          // the lock
+	mu      sync.RWMutex            // the lock
 	clients map[string][]*SSEClient // userID → list of their connections
 	// map[string][]*SSEClient: one user can have multiple open connections (tabs)
 }
@@ -106,8 +110,8 @@ func (m *SSEManager) SendToUser(userID, jsonMsg string) {
 		// We never block the notification worker for a slow browser.
 		// SELECT with default = try to send; if buffer full, do the default case.
 		select {
-		case c.Send <- jsonMsg:  // successfully queued
-		default:                 // client is too slow — drop this message
+		case c.Send <- jsonMsg: // successfully queued
+		default: // client is too slow — drop this message
 		}
 	}
 }
@@ -163,11 +167,17 @@ func Stream(mgr *SSEManager, cfg *config.Config) http.HandlerFunc {
 		// ── Event Loop ─────────────────────────────────────────────
 		// This is the core of SSE: sit here forever, sending events as they arrive.
 		// select waits on MULTIPLE channels simultaneously — like a switch statement for channels.
+		heartbeat := time.NewTicker(15 * time.Second)
+		defer heartbeat.Stop()
+
 		for {
 			select {
 			case msg := <-client.Send:
 				// A new event arrived — write it and flush immediately
 				fmt.Fprintf(w, "data: %s\n\n", msg)
+				flusher.Flush()
+			case <-heartbeat.C:
+				fmt.Fprintf(w, ": heartbeat\n\n")
 				flusher.Flush()
 			case <-r.Context().Done():
 				// r.Context().Done() fires when the HTTP request is cancelled:

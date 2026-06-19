@@ -157,6 +157,7 @@ services:
   # Go Scraping Service — Facebook Marketplace & Mercari
   # ----------------------------------------------------------
   scraping-service:
+    profiles: ["browser-scraping"]
     build:
       context: ./services/scraping-service
       dockerfile: Dockerfile
@@ -168,6 +169,9 @@ services:
         condition: service_healthy
     environment:
       - DISPLAY=:99  # Required for Playwright headless mode in container
+    volumes:
+      - playwright_browsers:/home/scrapeuser/.cache/ms-playwright
+      - playwright_driver:/home/scrapeuser/.cache/ms-playwright-go
 
   # ----------------------------------------------------------
   # React Frontend — Nginx in production
@@ -248,5 +252,7 @@ volumes:
     name: pokevend_pgdata      # PostgreSQL data
   redisdata:   # Redis AOF data
   rabbitmqdata: # RabbitMQ message logs
+  playwright_browsers: # Playwright browser cache for scraping-service
+  playwright_driver: # Playwright Go driver cache for scraping-service
   grafanadata:
   prometheusdata:

@@ -151,9 +151,18 @@ func main() {
 	r := chi.NewRouter()
 
 	// Built-in chi middleware:
-	r.Use(chimiddleware.Logger)                    // log every request: method, path, status, duration
-	r.Use(chimiddleware.Recoverer)                 // catch panics, return 500 instead of crashing server
-	r.Use(chimiddleware.Timeout(30 * time.Second)) // cancel requests that take too long
+	r.Use(chimiddleware.Logger)    // log every request: method, path, status, duration
+	r.Use(chimiddleware.Recoverer) // catch panics, return 500 instead of crashing server
+	r.Use(func(next http.Handler) http.Handler {
+		timeout := chimiddleware.Timeout(30 * time.Second)
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == "/api/stream" {
+				next.ServeHTTP(w, req)
+				return
+			}
+			timeout(next).ServeHTTP(w, req)
+		})
+	}) // cancel ordinary requests that take too long; SSE is long-lived
 
 	// CORS (Cross-Origin Resource Sharing):
 	// Browsers block requests from different origins (e.g., localhost:5173 → localhost:3001)

@@ -20,6 +20,13 @@ function money(value) {
   return Number.isFinite(num) ? `$${num.toFixed(2)}` : '-';
 }
 
+function effectiveMarketPrice(card) {
+  const primary = Number(card?.market);
+  if (Number.isFinite(primary)) return primary;
+  const trend = Number(card?.cardmarketTrend);
+  return Number.isFinite(trend) ? trend : null;
+}
+
 function toNumberOrNull(value) {
   if (value === '' || value === null || value === undefined) return null;
   const num = Number(value);

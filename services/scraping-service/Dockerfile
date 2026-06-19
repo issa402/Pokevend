@@ -39,7 +39,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /app/main .
 
-RUN useradd -m scrapeuser && chown -R scrapeuser /app
+RUN useradd -m scrapeuser \
+    && mkdir -p /home/scrapeuser/.cache/ms-playwright /home/scrapeuser/.cache/ms-playwright-go \
+    && chown -R scrapeuser:scrapeuser /app /home/scrapeuser/.cache
 USER scrapeuser
 
 CMD ["./main"]

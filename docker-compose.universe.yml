@@ -1,0 +1,37 @@
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:55433:5432"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:6381:6379"
+
+  rabbitmq:
+    ports: !override
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:15673:15672"
+
+  server:
+    ports: !override
+      - "127.0.0.1:3001:3001"
+
+  client:
+    ports: !override
+      - "127.0.0.1:5173:80"
+
+  poketcg:
+    ports: !override
+      - "127.0.0.1:8765:8765"
+
+  loki:
+    ports: !override
+      - "127.0.0.1:3101:3100"
+
+  grafana:
+    ports: !override
+      - "127.0.0.1:3002:3000"
+
+  prometheus:
+    ports: !override
+      - "127.0.0.1:9091:9090"

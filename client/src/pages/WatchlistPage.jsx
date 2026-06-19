@@ -333,10 +333,14 @@ export default function WatchlistPage() {
 
   async function handleAdd(e) {
     e.preventDefault();
+    if (!selectedCard && !form.query.trim()) {
+      alert('Search a card or type a card name first');
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
-        cardName: selectedCard?.name || form.query,
+        cardName: selectedCard?.name || form.query.trim(),
         setName: selectedCard?.set || '',
         externalCardId: selectedCard?.id || '',
         cardNumber: selectedCard?.number || '',
@@ -589,7 +593,7 @@ export default function WatchlistPage() {
               <input className="input" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Condition, grading plan, max fees, or seller notes" />
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" type="submit" disabled={submitting || !selectedCard}>{submitting ? 'Adding...' : 'Add to Watchlist'}</button>
+              <button className="btn btn-primary" type="submit" disabled={submitting || (!selectedCard && !form.query.trim())}>{submitting ? 'Adding...' : 'Add to Watchlist'}</button>
               <button className="btn btn-secondary" type="button" onClick={resetAddForm}>Clear</button>
             </div>
           </form>
